@@ -2,23 +2,14 @@ import os
 import re
 import json
 import time
-import random
 import requests
 from tqdm import tqdm
 from threading import Thread
-from http import HTTPStatus
-
-import dashscope
 
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, AIMessagePromptTemplate, PromptTemplate, MessagesPlaceholder
 
-llm = ChatOpenAI(
-    model_name='Qwen',
-    openai_api_base='http://localhost:8001/v1',
-    openai_api_key='EMPTY',
-    streaming=False
-)
+from base import log, invoke
 
 class MessageHandler:
     qa: list
@@ -30,6 +21,7 @@ class MessageHandler:
     user_num: int
     online: bool
     categories: list
+    log = log(__name__)
 
     def __init__(self):
         self.qa = []
@@ -41,13 +33,8 @@ class MessageHandler:
         self.user_num = 0
         self.user_map = {}
 
-        config = json.load(open('../config/qa.json', 'r', encoding='utf-8'))
+        config = json.load(open('./config/qa.json', 'r', encoding='utf-8'))
         self.categories = config['categories']
-
-    def log(self, msg):
-        # print('[{}] {}'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
-        with open('./generate_msg.log', 'a', encoding='utf-8') as f:
-            f.write('[INFO][{}] {}\n'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
     
     def print(self, obj, output=None, addition=''):
         if output is not None:
@@ -103,38 +90,6 @@ class MessageHandler:
             return 'assistant'
         else:
             return 'unknown'
-
-    def invoke(self, prompt, data:dict, online:bool=None) -> str:
-        '''调用模型'''
-        if online is None:
-            online = self.online
-
-        if online:
-            message = prompt.invoke(data).to_messages()
-            messages = [{
-                'role': self.message_type(type(i).__name__),
-                'content': i.content.strip()
-            } for i in message]
-
-            # print('调用 token 数：{}'.format(len(prompt.invoke(data).to_string())))
-            # return ""
-            
-            response = dashscope.Generation.call(
-                model = 'qwen1.5-14b-chat',
-                # model = 'qwen-turbo',
-                # model = 'qwen-plus',
-                # model = 'qwen-max',
-                messages = messages,
-                seed = random.randint(1, 10000),
-                result_format = "text"
-            )
-            if response.status_code == HTTPStatus.OK:
-                return response.output.text
-            else:
-                self.log('调用模型失败，返回：{}'.format(response.__str__()))
-                return ""
-        else:
-            return (prompt | llm).invoke(data).content
 
     def generate_QA_by_time_block(self):
         '''创建根据时间和 @ 关系创建消息块，然后由 AI 总结QA'''
@@ -204,7 +159,7 @@ class MessageHandler:
 - 对话中学生提出的问题可能并没有得到解决，此时你应该在回答中输出：“无答案”。
 
 工作要求如下：
-- 生成的提问风格要像真实人类问的问题。但是，尽量避免生成太直白和过于简单的问题。
+- 生成的提问风格要像真实人类问的问题，而且需要尽量避免代词的出现。但是，尽量避免生成太直白和过于简单的问题。
 - 生成的答案中请不要出现对依据的直接引用，要符合主流 AI Assistant 的风格，在合适的地方使用换行符以及 markdown 等格式使答案更加美观易读，在保证答案能在依据原文且不包含无关甚至错误内容的情况下，让答案尽量详细。注意，千万不要改变原文的本意，更不要捏造事实。
 - 关键词应当尽量简短。
 - 答案依据的上下文内容需要是完整的句子，因此在标记答案依据的引用内容时，每个引用内容一般不超过500字。
@@ -273,7 +228,7 @@ class MessageHandler:
                     messages += '[{}]({}): {}\n'.format(msg['time'], msg['user'], msg['message'])
                 while True:
                     time.sleep(0.5)
-                    response = self.invoke(prompt, {
+                    response = invoke(prompt, {
                         'messages': messages,
                         'categories': '、'.join(self.categories)
                     })
@@ -303,7 +258,7 @@ class MessageHandler:
                             self.qa.append(format_r)
                         break
                     except Exception as err:
-                        self.log('出错：{}，模型返回：{}'.format(err, response))
+                        self.log.info('出错：{}，模型返回：{}'.format(err, response))
 
         self.blocks = self.blocks[:20]
 
@@ -332,12 +287,12 @@ class MessageHandler:
 
     def initialize(self, path:str):
         '''从源文件中读取聊天记录并进行初步过滤和脱敏处理'''
-        self.log('初始化处理聊天记录，路径：{}'.format(path))
+        self.log.info('初始化处理聊天记录，路径：{}'.format(path))
         self.load(path)
-        self.log('聊天记录导入完成，共计{}条消息'.format(len(self.messages)))
-        self.log('正在隐藏用户信息和过滤消息')
+        self.log.info('聊天记录导入完成，共计{}条消息'.format(len(self.messages)))
+        self.log.info('正在隐藏用户信息和过滤消息')
         self.process()
-        self.log('用户信息隐藏和消息过滤完成，共计{}位用户，{}条消息' \
+        self.log.info('用户信息隐藏和消息过滤完成，共计{}位用户，{}条消息' \
                  .format(self.user_num, len(self.messages)))
 
     def load(self, path:str):
@@ -469,7 +424,7 @@ class MessageHandler:
         '''调用此函数一键处理消息文件'''
         if init is None:
             init = not os.path.exists(output_path)
-
+            
         if init:
             self.initialize(input_path)
             self.save(output_path)
@@ -477,11 +432,11 @@ class MessageHandler:
             self.read(output_path)
 
         if init or len(self.qa) == 0:
-            self.log('正在生成QA对')
+            self.log.info('正在生成QA对')
             self.generate_QA_by_time_block()
             self.save(output_path)
-            self.log('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
-        self.log('{} 处理完成，输出至：{}'.format(input_path, output_path))
+            self.log.info('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
+        self.log.info('{} 处理完成，输出至：{}'.format(input_path, output_path))
 
 if __name__ == '__main__':
     data_root = '../RawData/'

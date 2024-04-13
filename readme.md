@@ -13,7 +13,7 @@
     Mes[聊天记录]
     end
 
-    subgraph 提取 QA (/generate)
+    subgraph 提取 QA
     Doc_QA[document.py]
     Mes_QA[message.py]
     end

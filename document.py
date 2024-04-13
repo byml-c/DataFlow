@@ -6,29 +6,18 @@ from tqdm import tqdm
 from typing import Literal
 from threading import Thread
 
-import random
-import dashscope
-from http import HTTPStatus
-
 import traceback
 
-from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, AIMessagePromptTemplate, PromptTemplate, MessagesPlaceholder
 from langchain_core.documents import Document
 from langchain_community.document_loaders.base import BaseLoader
 from langchain.document_loaders import TextLoader, BSHTMLLoader, PyPDFLoader, Docx2txtLoader, CSVLoader
 
+from base import log, invoke
 '''
     需要安装的包：
     pip install pypdf docx2txt bs4
 '''
-
-llm = ChatOpenAI(
-    model_name='Qwen',
-    openai_api_base='http://localhost:8001/v1',
-    openai_api_key='EMPTY',
-    streaming=False
-)
 
 class ContentBlock:
     size: int = 0
@@ -268,6 +257,7 @@ class DocumentHandler:
     blocks: list
     online: bool
     categories: list
+    log = log(__name__)
     supported_types = ['txt', 'html', 'htm', 'md', 'pdf']
 
     def __init__(self):
@@ -276,13 +266,8 @@ class DocumentHandler:
         self.blocks = []
         self.online = True
 
-        config = json.load(open('../config/qa.json', 'r', encoding='utf-8'))
+        config = json.load(open('./config/qa.json', 'r', encoding='utf-8'))
         self.categories = config['categories']
-    
-    def log(self, msg):
-        # print('[{}] {}'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
-        with open('./generate_doc.log', 'a', encoding='utf-8') as f:
-            f.write('[INFO][{}] {}\n'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
     
     def __dict__(self):
         return {
@@ -301,48 +286,6 @@ class DocumentHandler:
             ensure_ascii=False
         )
     
-    @staticmethod
-    def message_type(s:str):
-        if s == 'HumanMessage':
-            return 'user'
-        if s == 'SystemMessage':
-            return 'system'
-        if s == 'AIMessage':
-            return 'assistant'
-        else:
-            return 'unknown'
-
-    def invoke(self, prompt, data:dict, online:bool=None) -> str:
-        '''调用模型'''
-        if online is None:
-            online = self.online
-
-        if online:
-            message = prompt.invoke(data).to_messages()
-            messages = [{
-                'role': self.message_type(type(i).__name__),
-                'content': i.content.strip()
-            } for i in message]
-
-            # print('调用 token 数：{}'.format(len(prompt.invoke(data).to_string())))
-            # return ''
-            
-            response = dashscope.Generation.call(
-                # model = 'qwen1.5-14b-chat',
-                # model = 'qwen-turbo',
-                model = 'qwen-plus',
-                # model = 'qwen-max',
-                messages = messages,
-                seed = random.randint(1, 10000),
-                result_format = 'text'
-            )
-            if response.status_code == HTTPStatus.OK:
-                return response.output.text
-            else:
-                return ''
-        else:
-            return (prompt | llm).invoke(data).content
-    
     def generate_QA_by_summary_blocks(self):
         prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(
@@ -357,7 +300,7 @@ class DocumentHandler:
 - 对话中学生提出的问题可能并没有得到解决，此时你应该在回答中输出：“无答案”。
 
 工作要求如下：
-- 生成的提问风格要像真实人类问的问题。但是，尽量避免生成太直白和过于简单的问题。
+- 生成的提问风格要像真实人类问的问题，而且需要尽量避免代词的出现。但是，尽量避免生成太直白和过于简单的问题。
 - 生成的答案中请不要出现对依据的直接引用，要符合主流 AI Assistant 的风格，在合适的地方使用换行符以及 markdown 等格式使答案更加美观易读，在保证答案能在依据原文且不包含无关甚至错误内容的情况下，让答案尽量详细。注意，千万不要改变原文的本意，更不要捏造事实。
 - 关键词应当尽量简短。
 - 答案依据的上下文内容需要是完整的句子，因此在标记答案依据的引用内容时，每个引用内容一般不超过500字。
@@ -417,7 +360,7 @@ class DocumentHandler:
         def run(blocks:list):
             for i in tqdm(range(len(blocks))):
                 while True:
-                    response = self.invoke(prompt, {
+                    response = invoke(prompt, {
                         'document': blocks[i]['page_content'],
                         'categories': '、'.join(self.categories)
                     })
@@ -446,10 +389,10 @@ class DocumentHandler:
                             self.qa.append(format_r)
                         break
                     except Exception as err:
-                        self.log('出错：{}，模型返回：{}'.format(err, response))
+                        self.log.info('出错：{}，模型返回：{}'.format(err, response))
         
         if len(self.blocks) == 0:
-            self.log('文档为空，无法生成QA对')
+            self.log.info('文档为空，无法生成QA对')
         else:
             threads = []
             thread_num = 5
@@ -465,7 +408,7 @@ class DocumentHandler:
 
     def load(self, path, size, cover, type, encoding, index):
         '''加载文档，返回文档列表'''
-        self.log('初始化文档数据，路径：{}'.format(path))
+        self.log.info('初始化文档数据，路径：{}'.format(path))
         self.blocks = []
         if type == 'txt':
             self.blocks = TextLoader(file_path=path, encoding=encoding). \
@@ -483,7 +426,7 @@ class DocumentHandler:
             'page_content': i.page_content,
             'metadata': i.metadata
         } for i in self.blocks]
-        self.log('文档加载完成，共 {} 个文档'.format(len(self.blocks)))
+        self.log.info('文档加载完成，共 {} 个文档'.format(len(self.blocks)))
     
     def read(self, path:str, encoding:str):
         '''从文件加载文档数据'''
@@ -514,11 +457,11 @@ class DocumentHandler:
         #         f_out.write(doc['page_content']+'\n')
 
         if init or len(self.qa) == 0:
-            self.log('正在生成QA对')
+            self.log.info('正在生成QA对')
             self.generate_QA_by_summary_blocks()
             self.save(output_path)
-            self.log('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
-        self.log('{} 处理完成，输出至：{}'.format(input_path, output_path))
+            self.log.info('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
+        self.log.info('{} 处理完成，输出至：{}'.format(input_path, output_path))
 
 def handle_folder(input_root, output_root):
     '''递归处理文件夹内所有文件'''
