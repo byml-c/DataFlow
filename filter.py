@@ -23,7 +23,7 @@ class Filter:
             line.strip() for line in open('./config/hit_stopwords.txt', 'r', encoding='utf-8').readlines()
         ]
     
-    def load(self, path):
+    def load(self, path:str):
         '''加载文件'''
         suffix = os.path.splitext(path)[1].lower().replace('.', '')
         if suffix == 'json':
@@ -46,10 +46,15 @@ class Filter:
         def tokenize(text):
             words = jieba.lcut(text)
             return [word for word in words if word not in self.stop_words]
-        questions = [' '.join(tokenize(q['Q'])) for q in self.qa]
+        # questions = [' '.join(tokenize(q['Q'])) for q in self.qa]
+        questions = [
+            ' '.join(
+                q['keywords'] if len(q['keywords']) > 0 else tokenize(q['Q'])
+            ) for q in self.qa
+        ]
 
         # 特征提取
-        tfidf_vectorizer = TfidfVectorizer(max_features=1000)
+        tfidf_vectorizer = TfidfVectorizer(max_features=10000)
         tfidf_matrix = tfidf_vectorizer.fit_transform(questions)
 
         # 确定最佳聚类数
@@ -85,5 +90,7 @@ class Filter:
 
 if __name__ == "__main__":
     f = Filter()
-    f.load_folder('../QA')
+    f.load_folder('../QA/QQ')
+    f.load_folder('../QA/Documents/AAA需增添水印的新文件/校园网相关')
+    f.load('../QA/南哪QA-save.json')
     f.classify()
