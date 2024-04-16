@@ -71,7 +71,7 @@ class Filter:
         self.log.info('最佳聚类数为：{}'.format(best_k))
 
         # 应用聚类
-        kmeans = BisectingKMeans(n_clusters=261)
+        kmeans = BisectingKMeans(n_clusters=best_k)
         kmeans.fit(tfidf_matrix)
         clusters = kmeans.labels_
 
