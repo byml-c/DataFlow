@@ -6,8 +6,8 @@ from tqdm import tqdm
 
 import jieba
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+from sklearn.cluster import BisectingKMeans, KMeans
 
 from base import log, invoke
 
@@ -60,8 +60,8 @@ class Filter:
         # 确定最佳聚类数
         best_score = -1
         best_k = 0
-        for k in tqdm(range(2, max(3, len(questions)//2))):  # 尝试不同的聚类数量
-            kmeans = KMeans(n_clusters=k)
+        for k in tqdm(range(2, max(3, len(questions)))):  # 尝试不同的聚类数量
+            kmeans = BisectingKMeans(n_clusters=k)
             kmeans.fit(tfidf_matrix)
             silhouette_avg = silhouette_score(tfidf_matrix, kmeans.labels_)
             if silhouette_avg > best_score:
@@ -71,7 +71,7 @@ class Filter:
         self.log.info('最佳聚类数为：{}'.format(best_k))
 
         # 应用聚类
-        kmeans = KMeans(n_clusters=best_k)
+        kmeans = BisectingKMeans(n_clusters=261)
         kmeans.fit(tfidf_matrix)
         clusters = kmeans.labels_
 
