@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import numpy as np
 from tqdm import tqdm
 
 
@@ -8,6 +9,11 @@ import jieba
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import silhouette_score
 from sklearn.cluster import BisectingKMeans, KMeans
+
+# from modelscope.models import Model
+# from modelscope.pipelines import pipeline
+# from modelscope.utils.constant import Tasks
+from sentence_transformers import SentenceTransformer
 
 from base import log, invoke
 
@@ -42,37 +48,62 @@ class Filter:
                 self.load(os.path.join(root, file))
         self.log.info('从文件夹 {} 加载完成！共加载 {} 条QA对！'.format(input_root, len(self.qa)))
     
-    def classify(self):
+    def embedding_vectorizer(self, sentences:list[str]):
+        '''使用预训练的嵌入模型，将输入的句子向量化，返回 np.array 形式的句向量'''
+        model_path = 'D:/Data/Models/m3e-base'
+        m3e = SentenceTransformer(model_path)
+        outpus = m3e.encode(sentences)
+        return outpus
+        # model_path = 'D:/Data/Models/nlp_gte_sentence-embedding_chinese-base'
+        # pipeline_se = pipeline(
+        #     Tasks.sentence_embedding,
+        #     model=model_path,
+        #     sequence_length=512
+        # ) # sequence_length 代表最大文本长度，默认值为128
+        # inputs = {
+        #     'source_sentence': sentences
+        # }
+        # outputs = pipeline_se(input=inputs)
+        # return outputs['text_embedding']
+
+    def cluster(self, source:list, recurse:bool=False):
+        '''将给定的 QA 进行聚类'''
         def tokenize(text):
             words = jieba.lcut(text)
             return [word for word in words if word not in self.stop_words]
-        # questions = [' '.join(tokenize(q['Q'])) for q in self.qa]
-        questions = [
-            ' '.join(
-                q['keywords'] if len(q['keywords']) > 0 else tokenize(q['Q'])
-            ) for q in self.qa
-        ]
+        
+        questions = []
+        for item in source:
+            keys = []
+            if len(item['keywords']) == 0:
+                keys = tokenize(item['Q'])
+            else:
+                keys = item['keywords']
+
+            keys = sorted([i.strip().lower() for i in keys])
+            questions.append(' '.join(keys))
 
         # 特征提取
-        tfidf_vectorizer = TfidfVectorizer(max_features=10000)
-        tfidf_matrix = tfidf_vectorizer.fit_transform(questions)
+        # tfidf_vectorizer = TfidfVectorizer()
+        # sen_vec_matrix = tfidf_vectorizer.fit_transform(questions)
+        sen_vec_matrix = self.embedding_vectorizer(questions)
 
         # 确定最佳聚类数
         best_score = -1
         best_k = 0
-        for k in tqdm(range(2, max(3, len(questions)))):  # 尝试不同的聚类数量
+        for k in tqdm(range(2, max(3, len(questions)//2))):  # 尝试不同的聚类数量
             kmeans = BisectingKMeans(n_clusters=k)
-            kmeans.fit(tfidf_matrix)
-            silhouette_avg = silhouette_score(tfidf_matrix, kmeans.labels_)
+            kmeans.fit(sen_vec_matrix)
+            silhouette_avg = silhouette_score(sen_vec_matrix, kmeans.labels_)
             if silhouette_avg > best_score:
                 best_score = silhouette_avg
                 best_k = k
 
-        self.log.info('最佳聚类数为：{}'.format(best_k))
+        # self.log.info('最佳聚类数为：{}'.format(best_k))
 
         # 应用聚类
         kmeans = BisectingKMeans(n_clusters=best_k)
-        kmeans.fit(tfidf_matrix)
+        kmeans.fit(sen_vec_matrix)
         clusters = kmeans.labels_
 
         # 存储分类结果
@@ -80,17 +111,34 @@ class Filter:
         for i, cluster_id in enumerate(clusters):
             if cluster_id not in clustered_strings:
                 clustered_strings[cluster_id] = []
-            clustered_strings[cluster_id].append(self.qa[i])
+            clustered_strings[cluster_id].append(source[i])
+        result_list = [i[1] for i in clustered_strings.items()]
         
+        # 递归处理每个聚类，直到每个聚类的大小 ≤ 10 条消息
+        if recurse:
+            temp_list = []
+            for res in result_list:
+                if len(res) <= 10:
+                    temp_list.append(res)
+                else:
+                    temp_list += self.cluster(res, recurse)
+            result_list = temp_list
+        return result_list
+    
+    def classify(self):
+        result = self.cluster(self.qa, True)
         # 输出聚类结果
-        for cluster_id, cluster_strings in clustered_strings.items():
-            self.log.info("\nCluster "+str(cluster_id))
-            for string in cluster_strings:
-                self.log.info(f'''问题：{string['Q']}\n回答：{string['A']}\n分类：{string['type']}\n来源：{string['source']}\n''')
+        self.log.info(f'聚类总数：{len(result)}')
+        for i in range(len(result)):
+            item = result[i]
+            self.log.info("\nCluster "+str(i))
+            for it in item:
+                self.log.info(f'''问题：{it['Q']}\n回答：{it['A']}\n分类：{it['type']}\n来源：{it['source']}\n''')
 
 if __name__ == "__main__":
     f = Filter()
     f.load_folder('../QA/QQ')
     f.load_folder('../QA/Documents/AAA需增添水印的新文件/校园网相关')
-    f.load('../QA/南哪QA-save.json')
+    # f.load('../QA/南哪QA-save.json')
     f.classify()
+    # f.embedding_vectorizer(['你好，这是一段测试', '测试中'])
