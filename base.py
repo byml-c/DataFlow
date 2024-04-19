@@ -22,8 +22,8 @@ llm = ChatOpenAI(
     streaming=False
 )
 
-default_online = False
-def invoke(self, prompt, data:dict, online:bool=None) -> str:
+default_online = True
+def invoke(prompt, data:dict, online:bool=None) -> str:
     '''调用模型'''
 
     def message_type(s:str):

@@ -3,6 +3,7 @@ import json
 import time
 import numpy as np
 from tqdm import tqdm
+from threading import Thread
 
 
 import jieba
@@ -11,16 +12,19 @@ from sklearn.metrics import silhouette_score
 from sklearn.cluster import BisectingKMeans, KMeans, DBSCAN, AffinityPropagation
 from sklearn.decomposition import PCA
 
-# from modelscope.models import Model
-# from modelscope.pipelines import pipeline
-# from modelscope.utils.constant import Tasks
+from modelscope.models import Model
+from modelscope.pipelines import pipeline
+from modelscope.utils.constant import Tasks
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+
+from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, AIMessagePromptTemplate, PromptTemplate, MessagesPlaceholder
 
 from base import log, invoke
 
 class Filter:
     qa: list
+    hq: list
+    lq: list
     stop_words: list
     log = log(__name__)
 
@@ -31,7 +35,29 @@ class Filter:
             line.strip() for line in open('./config/hit_stopwords.txt', 'r', encoding='utf-8').readlines()
         ]
     
-    def load(self, path:str):
+    def __dict__(self):
+        return {
+            'qa': self.qa,
+            'hq': self.hq,
+            'lq': self.lq
+        }
+
+    def load(self):
+        '''加载文件'''
+        json_data = json.load(open('./filter.json', 'r', encoding='utf-8'))
+        self.qa = json_data['qa']
+        self.hq = json_data['hq']
+        self.lq = json_data['lq']
+
+    def save(self):
+        '''保存文件'''
+        json.dump(
+            obj=self.__dict__(),
+            fp=open('./filter.json', 'w', encoding='utf-8'),
+            ensure_ascii=False
+        )
+
+    def load_file(self, path:str):
         '''加载文件'''
         suffix = os.path.splitext(path)[1].lower().replace('.', '')
         if suffix == 'json':
@@ -47,8 +73,69 @@ class Filter:
         self.log.info('开始从文件夹 {} 加载QA对！'.format(input_root))
         for root, dirs, files in os.walk(input_root):
             for file in files:
-                self.load(os.path.join(root, file))
+                self.load_file(os.path.join(root, file))
         self.log.info('从文件夹 {} 加载完成！共加载 {} 条QA对！'.format(input_root, len(self.qa)))
+    
+    def filter(self):
+        '''使用模型进行预筛选'''
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(
+                '''
+请根据以下标准评估每个QA对的质量，并将其标记为“优”或“劣”：
+
+- 当回答未能充分解决问题，提供的信息不完整或不足以帮助用户解决问题时，应标记该QA对为“劣”
+- 如果回答中包含指向特定个体的指代，如“你可以联系某某人”，导致无法直接从回答中获取解决问题的具体方法，应将此类QA对标记为“劣”。
+- 若模型给出的回答过于笼统，基于提供的信息不足而只能提供一种通用而非针对性的解决方案（例如，“在大学里遇到这类问题通常可以咨询教务处”），此类情况也应标记为“劣”。
+- 若问题或回答中涉及具体的、独一无二的个人信息，造成其他用户无法从中获得有效参考（例如，“翠翠是学长还是学姐？”），则此QA对应标记为“劣”。
+
+请确保输出结果为一个列表，其中包含了与输入QA对数量相同的元素，每个元素分别对应一个“优”或“劣”的评价。
+'''
+            ),
+            HumanMessagePromptTemplate.from_template(
+                '现在，请开始你的工作！\n\n{QA_pair}'
+            )
+        ])
+        
+        self.hq, self.lq = [], []
+        def run(source:list):
+            block_size = 15
+            for i in tqdm(range(0, len(source), block_size)):
+                QA_pair = ''
+                QA_source = source[i:i+block_size]
+                for item in QA_source:
+                    QA_pair += f'''问题: {item['Q']}\n回答: {item['A']}\n\n'''
+                
+                while True:
+                    response = invoke(prompt, {'QA_pair': QA_pair})
+                    # self.log.info(f'{QA_pair} {response} \n{len(QA_source)}')
+                    try:
+                        res = json.loads(response.replace('\'', '\"'))
+                        if len(res) != len(QA_source):
+                            raise ValueError('返回结果长度错误！')
+                        for i in range(len(res)):
+                            if res[i] not in ['优', '劣']:
+                                raise ValueError('返回结果错误！')
+                            if res[i] == '优':
+                                self.hq.append(QA_source[i])
+                            else:
+                                self.lq.append(QA_source[i])
+                        break
+                    except Exception as e:
+                        self.log.info(f'解析失败，报错：{e}')
+        
+        threads = []
+        thread_num = 5
+        thread_blocks_size = len(self.qa) // thread_num
+        if thread_blocks_size == 0:
+            thread_blocks_size = 1
+        for i in range(0, len(self.qa), thread_blocks_size):
+            t = Thread(target=run, args=([self.qa[i:i+thread_blocks_size]]))
+            t.start()
+            threads.append(t)
+        for t in threads:
+            t.join()
+        
+        self.save()
     
     def embedding_vectorizer(self, sentences:list[str]):
         '''使用预训练的嵌入模型，将输入的句子向量化，返回 np.array 形式的句向量'''
@@ -183,8 +270,15 @@ class Filter:
 
 if __name__ == "__main__":
     f = Filter()
-    f.load_folder('../QA/QQ')
-    f.load_folder('../QA/Documents/AAA需增添水印的新文件/校园网相关')
+    f.load()
+    for i in f.lq:
+        f.log.info(f'''Low Quality 问题：{i['Q']}\n回答：{i['A']}\n分类：{i['type']}\n来源：{i['source']}\n''')
+    for i in f.hq:
+        f.log.info(f'''High Quality 问题：{i['Q']}\n回答：{i['A']}\n分类：{i['type']}\n来源：{i['source']}\n''')
+    # f.load_folder('../QA/QQ')
+    # f.load_folder('../QA/Documents/AAA需增添水印的新文件/校园网相关')
+    
+    # f.filter()
     # f.load('../QA/南哪QA-save.json')
-    f.classify()
+    # f.classify()
     # f.embedding_vectorizer(['你好，这是一段测试', '测试中'])
