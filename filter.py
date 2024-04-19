@@ -8,12 +8,14 @@ from tqdm import tqdm
 import jieba
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import silhouette_score
-from sklearn.cluster import BisectingKMeans, KMeans
+from sklearn.cluster import BisectingKMeans, KMeans, DBSCAN, AffinityPropagation
+from sklearn.decomposition import PCA
 
 # from modelscope.models import Model
 # from modelscope.pipelines import pipeline
 # from modelscope.utils.constant import Tasks
 from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from base import log, invoke
 
@@ -65,9 +67,11 @@ class Filter:
         # }
         # outputs = pipeline_se(input=inputs)
         # return outputs['text_embedding']
-
-    def cluster(self, source:list, recurse:bool=False):
-        '''将给定的 QA 进行聚类'''
+    
+    def create_sentence_matrix(self, source:list):
+        '''
+            针对给定的 QA 对象输入，返回句向量矩阵
+        '''
         def tokenize(text):
             words = jieba.lcut(text)
             return [word for word in words if word not in self.stop_words]
@@ -83,18 +87,24 @@ class Filter:
             keys = sorted([i.strip().lower() for i in keys])
             questions.append(' '.join(keys))
 
-        # 特征提取
-        # tfidf_vectorizer = TfidfVectorizer()
-        # sen_vec_matrix = tfidf_vectorizer.fit_transform(questions)
         sen_vec_matrix = self.embedding_vectorizer(questions)
+        return sen_vec_matrix
+
+    def Bikmeans_cluster(self, source:list, recurse:bool=False):
+        '''将给定的 QA 进行聚类'''
+        # 转换成句向量
+        sen_vec_matrix = self.create_sentence_matrix(source)
+        # 使用 PCA 进行降维，将句向量降为 2 维
+        pca = PCA(n_components=2)
+        pca_weights = pca.fit_transform(sen_vec_matrix)
 
         # 确定最佳聚类数
         best_score = -1
         best_k = 0
-        for k in tqdm(range(2, max(3, len(questions)//2))):  # 尝试不同的聚类数量
+        for k in tqdm(range(2, max(3, len(source)//10))):  # 尝试不同的聚类数量
             kmeans = BisectingKMeans(n_clusters=k)
-            kmeans.fit(sen_vec_matrix)
-            silhouette_avg = silhouette_score(sen_vec_matrix, kmeans.labels_)
+            kmeans.fit(pca_weights)
+            silhouette_avg = silhouette_score(pca_weights, kmeans.labels_)
             if silhouette_avg > best_score:
                 best_score = silhouette_avg
                 best_k = k
@@ -103,7 +113,7 @@ class Filter:
 
         # 应用聚类
         kmeans = BisectingKMeans(n_clusters=best_k)
-        kmeans.fit(sen_vec_matrix)
+        kmeans.fit(pca_weights)
         clusters = kmeans.labels_
 
         # 存储分类结果
@@ -121,12 +131,48 @@ class Filter:
                 if len(res) <= 10:
                     temp_list.append(res)
                 else:
-                    temp_list += self.cluster(res, recurse)
+                    temp_list += self.Bikmeans_cluster(res, recurse)
             result_list = temp_list
         return result_list
     
+    def DBSCAN_cluster(self, source:list, recurse:bool=False):
+        '''
+            使用 DBSCAN 算法计算聚类
+        '''
+        sen_vec_matrix = self.create_sentence_matrix(source)
+        # 使用 PCA 进行降维，将句向量降为 2 维
+        pca = PCA(n_components=2)
+        pca_weights = pca.fit_transform(sen_vec_matrix)
+
+        affinity_propagation = DBSCAN(eps=0.2, min_samples=2)
+        affinity_propagation.fit(pca_weights)
+        clusters = affinity_propagation.labels_
+
+        # 存储分类结果
+        clustered_strings = {}
+        for i, cluster_id in enumerate(clusters):
+            if cluster_id not in clustered_strings:
+                clustered_strings[cluster_id] = []
+            clustered_strings[cluster_id].append(source[i])
+        result_list = [i[1] for i in clustered_strings.items()]
+        self.log.info(f'聚类存储完成，元素个数：{len(source)}，聚类个数：{len(result_list)}')
+        
+        # 递归处理每个聚类，直到每个聚类的大小 ≤ 10 条消息
+        if recurse:
+            temp_list = []
+            if len(result_list) == 1:
+                temp_list = self.Bikmeans_cluster(result_list[0], True)
+            else:
+                for res in result_list:
+                    if len(res) <= 10:
+                        temp_list.append(res)
+                    else:
+                        temp_list += self.DBSCAN_cluster(res, recurse)
+            result_list = temp_list
+        return result_list
+
     def classify(self):
-        result = self.cluster(self.qa, True)
+        result = self.DBSCAN_cluster(self.qa, True)
         # 输出聚类结果
         self.log.info(f'聚类总数：{len(result)}')
         for i in range(len(result)):
