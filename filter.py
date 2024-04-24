@@ -12,6 +12,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import silhouette_score
 from sklearn.cluster import BisectingKMeans, KMeans, DBSCAN, AffinityPropagation
 from sklearn.decomposition import PCA
+from sklearn.manifold import MDS
+from sklearn.metrics.pairwise import cosine_similarity
 
 from modelscope.models import Model
 from modelscope.pipelines import pipeline
@@ -185,39 +187,84 @@ class Filter:
         '''
             针对给定的 QA 对象输入，返回句向量矩阵
         '''
-        def tokenize(text):
-            words = jieba.lcut(text)
+        def tokenize_by_jieba(item):
+            words = jieba.lcut(item['Q'])
             return [word for word in words if word not in self.stop_words]
-        
+        def tokenize_by_llm(item):
+            prompt = ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(
+'''
+你的任务是从一个 QA 对中提取关键词。
+
+工作流程如下：
+- 你将会收到一个 QA 对，格式为“问题：xxx\n回答：xxx”。
+- 你需要理解QA对的内容，对其进行概括，然后提取出有关提问的关键词。
+- 接着，你需要将相似的关键词进行合并。
+
+工作要求如下：
+- 关键词应当是词语，尽量简短。
+- 关键词之间应当尽量无关，且不能重复。
+- 关键词无需太多，一般 3-5 个即可。
+
+输出格式如下：
+["关键词", "关键词", ... , "关键词"]
+
+现在，请开始你的工作！
+'''
+                ),
+                HumanMessagePromptTemplate.from_template(
+                    '问题：{Q}\n回答：{A}'
+                )
+            ])
+            while True:
+                response = invoke(prompt, {'Q': item['Q'], 'A': item['A']}, False)
+                try:
+                    res = json.loads(response.strip().replace('\'', '\"'))
+                    print(res)
+                    return res
+                except Exception as e:
+                    self.log.info(f'解析失败，报错：{e}')
+                
         questions = []
-        for item in source:
+        for item_id in tqdm(range(len(source))):
             keys = []
+            item = source[item_id]
             if len(item['keywords']) == 0:
-                keys = tokenize(item['Q'])
+                # keys = tokenize_by_llm(item)
+                keys = tokenize_by_jieba(item)
             else:
                 keys = item['keywords']
 
             keys = sorted([i.strip().lower() for i in keys])
             questions.append(' '.join(keys))
 
+        # 使用词嵌入模型转换句向量
         sen_vec_matrix = self.embedding_vectorizer(questions)
-        return sen_vec_matrix
+        # 使用余弦相似度计算句向量之间的相似度
+        cos_similarity_matrix = 1-cosine_similarity(sen_vec_matrix)
+        cos_similarity_matrix[cos_similarity_matrix < 0] = 0
+        # 使用 MDS 进行降维
+        mds = MDS(n_components=2, dissimilarity='precomputed')
+        
+        # 使用 PCA 进行降维，将句向量降为 2 维
+        # pca = PCA(n_components=2)
+        # pca_weights = pca.fit_transform(sen_vec_matrix)
+        res = mds.fit_transform(cos_similarity_matrix)
+        print(res)
+        return res
 
     def Bikmeans_cluster(self, source:list, recurse:bool=False):
         '''将给定的 QA 进行聚类'''
         # 转换成句向量
         sen_vec_matrix = self.create_sentence_matrix(source)
-        # 使用 PCA 进行降维，将句向量降为 2 维
-        pca = PCA(n_components=2)
-        pca_weights = pca.fit_transform(sen_vec_matrix)
 
         # 确定最佳聚类数
         best_score = -1
         best_k = 0
         for k in tqdm(range(2, max(3, len(source)//10))):  # 尝试不同的聚类数量
             kmeans = BisectingKMeans(n_clusters=k)
-            kmeans.fit(pca_weights)
-            silhouette_avg = silhouette_score(pca_weights, kmeans.labels_)
+            kmeans.fit(sen_vec_matrix)
+            silhouette_avg = silhouette_score(sen_vec_matrix, kmeans.labels_)
             if silhouette_avg > best_score:
                 best_score = silhouette_avg
                 best_k = k
@@ -226,7 +273,7 @@ class Filter:
 
         # 应用聚类
         kmeans = BisectingKMeans(n_clusters=best_k)
-        kmeans.fit(pca_weights)
+        kmeans.fit(sen_vec_matrix)
         clusters = kmeans.labels_
 
         # 存储分类结果
@@ -253,12 +300,9 @@ class Filter:
             使用 DBSCAN 算法计算聚类
         '''
         sen_vec_matrix = self.create_sentence_matrix(source)
-        # 使用 PCA 进行降维，将句向量降为 2 维
-        pca = PCA(n_components=2)
-        pca_weights = pca.fit_transform(sen_vec_matrix)
 
         affinity_propagation = DBSCAN(eps=0.2, min_samples=2)
-        affinity_propagation.fit(pca_weights)
+        affinity_propagation.fit(sen_vec_matrix)
         clusters = affinity_propagation.labels_
 
         # 存储分类结果
@@ -286,6 +330,10 @@ class Filter:
 
     def classify(self):
         '''对 QA 对进行聚类，仅聚类 HQ 类型的 QA 对'''
+        if len(self.hq) == 0:
+            self.log.warning('有效QA为空，请先运行 filter 函数获得有效QA！')
+            return 
+        
         result = self.DBSCAN_cluster(self.hq, True)
         # 输出聚类结果
         self.log.info(f'聚类总数：{len(result)}')
@@ -293,7 +341,7 @@ class Filter:
             item = result[i]
             self.log.info("\nCluster "+str(i))
             for it in item:
-                self.log.info(f'''问题：{it['Q']}\n回答：{it['A']}\n分类：{it['type']}\n来源：{it['source']}\n''')
+                self.log.info(f'''问题：{it['Q']}\n回答：{it['A']}\n分类：{it['keywords']}\n来源：{it['source']}\n''')
         self.cluster = result
 
         self.save()
@@ -304,17 +352,18 @@ class Filter:
         )
 
 if __name__ == "__main__":
-    f = Filter('QQ')
-    f.load()
-    # f.load_folder('../QA/QQ')
-    # f.load_folder('../QA/Documents/AAA需增添水印的新文件/校园网相关')
+    f = Filter('QA')
+    # f.load()
+    f.load_file('../QA/南哪QA-save.json')
+    f.load_folder('../QA/QQ')
+    f.load_folder('../QA/Documents/AAA需增添水印的新文件/校园网相关')
     # f.filter()
     # print(len(f.lq), len(f.hq))
     # f.load_folder('../QA/QQ')
     # f.load_folder('../QA/Documents/AAA需增添水印的新文件/校园网相关')
     
     # f.filter()
-    # f.load('../QA/南哪QA-save.json')
+    f.hq = f.qa
     f.classify()
     # for i in f.lq:
     #     f.log.info(f'''问题：{i['Q']}\n回答：{i['A']}\n分类：{i['type']}\n来源：{i['source']}\n\n''')

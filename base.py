@@ -15,6 +15,11 @@ class log:
         # print('[{}] {}'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
         with open(f'./log/{self.name}.log', 'a', encoding='utf-8') as f:
             f.write('[INFO][{}] {}\n'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
+        
+    def warning(self, msg):
+        # print('[{}] {}'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
+        with open(f'./log/{self.name}.log', 'a', encoding='utf-8') as f:
+            f.write('[WARNING][{}] {}\n'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
 
 llm = ChatOpenAI(
     model_name='Qwen',
@@ -53,8 +58,8 @@ def invoke(prompt, data:dict, online:bool=None) -> str:
         response = dashscope.Generation.call(
             # model = 'qwen1.5-14b-chat',
             # model = 'qwen-turbo',
-            model = 'qwen-plus',
-            # model = 'qwen-max',
+            # model = 'qwen-plus',
+            model = 'qwen-max',
             messages = messages,
             seed = random.randint(1, 10000),
             result_format = 'text'
