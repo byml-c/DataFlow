@@ -252,19 +252,19 @@ class MessageHandler:
                                 'A': r['回答'],
                                 'type': r['分类'].replace(' ', ''),
                                 'keywords': [i.replace(' ', '') for i in r['关键词']],
-                                'ref': r['依据'],
+                                'refs': r['依据'],
                                 'author': 'AI'
                             }
                             self.qa.append(format_r)
                         break
                     except Exception as err:
-                        self.log.info('出错：{}，模型返回：{}'.format(err, response))
+                        self.log.log('出错：{}，模型返回：{}'.format(err, response))
 
         self.blocks = self.blocks[:20]
 
         threads = []
         thread_num = 5
-        thread_blocks_size = len(self.blocks) // thread_num
+        thread_blocks_size = max(len(self.blocks) // thread_num, 1)
         for i in range(0, len(self.blocks), thread_blocks_size):
             t = Thread(target=run, args=([self.blocks[i:i+thread_blocks_size]]))
             t.start()
@@ -287,12 +287,12 @@ class MessageHandler:
 
     def initialize(self, path:str):
         '''从源文件中读取聊天记录并进行初步过滤和脱敏处理'''
-        self.log.info('初始化处理聊天记录，路径：{}'.format(path))
+        self.log.log('初始化处理聊天记录，路径：{}'.format(path))
         self.load(path)
-        self.log.info('聊天记录导入完成，共计{}条消息'.format(len(self.messages)))
-        self.log.info('正在隐藏用户信息和过滤消息')
+        self.log.log('聊天记录导入完成，共计{}条消息'.format(len(self.messages)))
+        self.log.log('正在隐藏用户信息和过滤消息')
         self.process()
-        self.log.info('用户信息隐藏和消息过滤完成，共计{}位用户，{}条消息' \
+        self.log.log('用户信息隐藏和消息过滤完成，共计{}位用户，{}条消息' \
                  .format(self.user_num, len(self.messages)))
 
     def load(self, path:str):
@@ -432,11 +432,11 @@ class MessageHandler:
             self.read(output_path)
 
         if init or len(self.qa) == 0:
-            self.log.info('正在生成QA对')
+            self.log.log('正在生成QA对')
             self.generate_QA_by_time_block()
             self.save(output_path)
-            self.log.info('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
-        self.log.info('{} 处理完成，输出至：{}'.format(input_path, output_path))
+            self.log.log('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
+        self.log.log('{} 处理完成，输出至：{}'.format(input_path, output_path))
 
 if __name__ == '__main__':
     data_root = '../RawData/'

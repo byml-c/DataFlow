@@ -18,18 +18,16 @@ api_keys = json.load(open('../../api_key.json', 'r', encoding='utf-8'))
 class log:
     name: str
 
-    def __init__(self, name):
+    def __init__(self, name:str):
         self.name = name
         
-    def info(self, msg):
-        # print('[{}] {}'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
+    def log(self, msg, level='I'):
+        '''记录信息'''
+        level = {'I': 'INFO', 'E': 'ERROR', 'W': 'WARNING'}.get(level, 'INFO')
+        msg = f'[{level}] [{time.strftime(r"%Y-%m-%d %H:%M:%S", time.localtime())}] {msg}'
         with open(f'./log/{self.name}.log', 'a', encoding='utf-8') as f:
-            f.write('[INFO][{}] {}\n'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
-        
-    def warning(self, msg):
-        # print('[{}] {}'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
-        with open(f'./log/{self.name}.log', 'a', encoding='utf-8') as f:
-            f.write('[WARNING][{}] {}\n'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
+            f.write(msg+'\n')
+        print(f'<{self.name}> {msg}')
 
 local_llm, moonshot_llm = None, None
 def local_invoke(prompt, data:dict) -> str:

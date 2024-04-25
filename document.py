@@ -383,22 +383,20 @@ class DocumentHandler:
                                 'A': r['回答'],
                                 'type': r['分类'].replace(' ', ''),
                                 'keywords': [i.replace(' ', '') for i in r['关键词']],
-                                'ref': r['依据'],
+                                'refs': r['依据'],
                                 'author': 'AI'
                             }
                             self.qa.append(format_r)
                         break
                     except Exception as err:
-                        self.log.info('出错：{}，模型返回：{}'.format(err, response))
+                        self.log.log('出错：{}，模型返回：{}'.format(err, response))
         
         if len(self.blocks) == 0:
-            self.log.info('文档为空，无法生成QA对')
+            self.log.log('文档为空，无法生成QA对')
         else:
             threads = []
             thread_num = 5
-            thread_blocks_size = len(self.blocks) // thread_num
-            if thread_blocks_size == 0:
-                thread_blocks_size = 1
+            thread_blocks_size = max(len(self.blocks) // thread_num, 1)
             for i in range(0, len(self.blocks), thread_blocks_size):
                 t = Thread(target=run, args=([self.blocks[i:i+thread_blocks_size]]))
                 t.start()
@@ -408,7 +406,7 @@ class DocumentHandler:
 
     def load(self, path, size, cover, type, encoding, index):
         '''加载文档，返回文档列表'''
-        self.log.info('初始化文档数据，路径：{}'.format(path))
+        self.log.log('初始化文档数据，路径：{}'.format(path))
         self.blocks = []
         if type == 'txt':
             self.blocks = TextLoader(file_path=path, encoding=encoding). \
@@ -426,7 +424,7 @@ class DocumentHandler:
             'page_content': i.page_content,
             'metadata': i.metadata
         } for i in self.blocks]
-        self.log.info('文档加载完成，共 {} 个文档'.format(len(self.blocks)))
+        self.log.log('文档加载完成，共 {} 个文档'.format(len(self.blocks)))
     
     def read(self, path:str, encoding:str):
         '''从文件加载文档数据'''
@@ -457,11 +455,11 @@ class DocumentHandler:
         #         f_out.write(doc['page_content']+'\n')
 
         if init or len(self.qa) == 0:
-            self.log.info('正在生成QA对')
+            self.log.log('正在生成QA对')
             self.generate_QA_by_summary_blocks()
             self.save(output_path)
-            self.log.info('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
-        self.log.info('{} 处理完成，输出至：{}'.format(input_path, output_path))
+            self.log.log('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
+        self.log.log('{} 处理完成，输出至：{}'.format(input_path, output_path))
 
 def handle_folder(input_root, output_root):
     '''递归处理文件夹内所有文件'''
