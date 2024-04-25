@@ -95,7 +95,7 @@ class Generator:
                 })
                 self.db.insert(data)
             self.status = file_id
-
+            self.save()
 
 if __name__ == '__main__':
     a = Generator('TEST', root_path='../TEST', force=True)
