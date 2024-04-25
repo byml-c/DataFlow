@@ -1,7 +1,14 @@
 import time
 import random
+import requests
+
+# 阿里灵积 SDK
 import dashscope
 from http import HTTPStatus
+
+# 百度千帆 SDK
+import qianfan
+
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, AIMessagePromptTemplate, PromptTemplate, MessagesPlaceholder
 
@@ -21,18 +28,34 @@ class log:
         with open(f'./log/{self.name}.log', 'a', encoding='utf-8') as f:
             f.write('[WARNING][{}] {}\n'.format(time.strftime(r'%Y-%m-%d %H:%M:%S', time.localtime()), msg))
 
-llm = ChatOpenAI(
-    model_name='Qwen',
-    openai_api_base='http://localhost:8001/v1',
-    openai_api_key='EMPTY',
-    streaming=False
-)
+local_llm, moonshot_llm = None, None
+def local_invoke(prompt, data:dict) -> str:
+    '''调用本地模型'''
+    global local_llm
+    if local_llm is None:
+        local_llm = ChatOpenAI(
+            model_name='Qwen',
+            openai_api_base='http://localhost:8001/v1',
+            openai_api_key='EMPTY',
+            streaming=False
+        )
+    return (prompt | local_llm).invoke(data).content
 
-default_online = True
-def invoke(prompt, data:dict, online:bool=None) -> str:
-    '''调用模型'''
+def moonshot_invoke(prompt, data:dict, model:str) -> str:
+    '''调用 KimiChat 模型'''
+    global moonshot_llm
+    if moonshot_llm is None:
+        moonshot_llm = ChatOpenAI(
+            model_name=model,
+            base_url='https://api.moonshot.cn/v1',
+            api_key='sk-IHzBECqwLRUoejNsgTujFznlnAsU6W46tHU2uR9kOvZoWV3O',
+        )
+    return (prompt | moonshot_llm).invoke(data).content
 
+def dashscope_invoke(prompt, data:dict, model:str) -> str:
+    '''调用阿里灵积平台模型'''
     def message_type(s:str):
+        '''将消息类型转换为角色名'''
         if s == 'HumanMessage':
             return 'user'
         if s == 'SystemMessage':
@@ -42,37 +65,140 @@ def invoke(prompt, data:dict, online:bool=None) -> str:
         else:
             return 'unknown'
 
+    message = prompt.invoke(data).to_messages()
+    messages = [{
+        'role': message_type(type(i).__name__),
+        'content': i.content.strip()
+    } for i in message]
+    
+    # print('调用 token 数：{}'.format(len(prompt.invoke(data).to_string())))
+    # return ''
+
+    response = dashscope.Generation.call(
+        model = model,
+        messages = messages,
+        seed = random.randint(1, 10000),
+        result_format = 'text'
+    )
+    if response.status_code == HTTPStatus.OK:
+        return response.output.text
+    else:
+        return ''
+
+def minimax_invoke(prompt, data:dict, model:str) -> str:
+    '''调用 Minimax 模型'''
+    def message_type(s:str):
+        '''将消息类型转换为角色名'''
+        if s == 'HumanMessage':
+            return 'user'
+        if s == 'SystemMessage':
+            return 'system'
+        if s == 'AIMessage':
+            return 'assistant'
+        else:
+            return 'unknown'
+    
+    api_key = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJHcm91cE5hbWUiOiLpmYjmn4_lnYciLCJVc2VyTmFtZSI6IumZiOafj-WdhyIsIkFjY291bnQiOiIiLCJTdWJqZWN0SUQiOiIxNzgyNTg4NTA5NzA2NTIyNjM5IiwiUGhvbmUiOiIxODMxMjQyMjMyNSIsIkdyb3VwSUQiOiIxNzgyNTg4NTA5Njk4MTM0MDMxIiwiUGFnZU5hbWUiOiIiLCJNYWlsIjoiIiwiQ3JlYXRlVGltZSI6IjIwMjQtMDQtMjQgMjA6MDI6MTAiLCJpc3MiOiJtaW5pbWF4In0.UwdVOEkezZ3WUyMIu_tebKugVIu8l5ERnE3g_PkUGSqeEdWZk666JBeXNBNIAjOzXIcsjcPXiRO1Oj8gHf-0rLtnv9vLbhykshOIfIRfrG6JwB1RVILIqsH52JBMcxe86k4BksqmvfmINpwoA5EZazttEx16FlkzCiSaCznu6ih4GVry5yL_YnnFvkwXvJrFOnMf5Uvt_rHZjE9vzlP_aaGoE_F1Bk9NjYzmX2vRK8ApDCpU_H4Go_xnBtrzSI5js-VVTP20ZxQ7Q9vTzsqF9VVNPvfs8gXavapTjuitrwzakKfMlpAwALB6-m6vWXuL4UdCCJlKb0R_EERz9L2h4Q'
+    url = 'https://api.minimax.chat/v1/text/chatcompletion_v2'
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    message = prompt.invoke(data).to_messages()
+    messages = [{
+        'role': message_type(type(i).__name__),
+        'content': i.content.strip()
+    } for i in message]
+    body = {
+        'model': model,
+        'stream': False,
+        # 'temperature': random.random(),
+        'messages': messages,
+        'tool_choice': 'none'
+    }
+    response = requests.post(url=url, headers=headers, json=body)
+    try:
+        res = response.json()
+        if res['base_resp']['status_code'] == 0 \
+            and res['choices'][0]['finish_reason'] == 'stop':
+            return res['choices'][0]['message']['content']
+        else:
+            raise ValueError(f'返回值错误，详细返回：{res}')
+    except Exception as e:
+        # print(response.text, e)
+        return ''
+
+def qianfan_invoke(prompt, data:dict, model:str) -> str:
+    '''调用百度千帆平台模型'''
+    def message_type(s:str):
+        '''将消息类型转换为角色名'''
+        if s == 'HumanMessage':
+            return 'user'
+        if s == 'SystemMessage':
+            return 'system'
+        if s == 'AIMessage':
+            return 'assistant'
+        else:
+            return 'unknown'
+    
+    message = prompt.invoke(data).to_messages()
+    system_prompt = ''
+    if message_type(type(message[0]).__name__) == 'system':
+        system_prompt = message[0].content.strip()
+        message = message[1:]
+    messages = [{
+        'role': message_type(type(i).__name__),
+        'content': i.content.strip()
+    } for i in message]
+
+    chat_completion = qianfan.ChatCompletion(
+        ak='3C0MPUVq1IfswBM9a6wH1mlp',
+        sk='cpgfKxtt2yG0Tsc8y6KORjIKzmHXxxRH'
+    )
+    response = chat_completion.do(
+        model=model,
+        messages=messages,
+        system=system_prompt
+    )
+    return response['body']['result']
+
+default_online = 'qwen-plus'
+def invoke(prompt, data:dict, online:str=None) -> str:
+    '''
+        调用模型
+
+        参数：
+            prompt: 调用模型的提示
+            data: 调用模型的数据
+            online: 在线模型名称，
+                如果为不填则使用默认的在线模型，
+                为空字符串则使用本地模型
+        返回：
+            字符串，模型输出
+    '''
     if online is None:
         online = default_online
 
-    if online:
-        message = prompt.invoke(data).to_messages()
-        messages = [{
-            'role': message_type(type(i).__name__),
-            'content': i.content.strip()
-        } for i in message]
-
-        # print('调用 token 数：{}'.format(len(prompt.invoke(data).to_string())))
-        # return ''
-        
-        response = dashscope.Generation.call(
-            # model = 'qwen1.5-14b-chat',
-            # model = 'qwen-turbo',
-            # model = 'qwen-plus',
-            model = 'qwen-max',
-            messages = messages,
-            seed = random.randint(1, 10000),
-            result_format = 'text'
-        )
-        if response.status_code == HTTPStatus.OK:
-            return response.output.text
+    if online != '':
+        # 使用阿里灵积平台的模型
+        if online in ['qwen1.5-14b-chat', 'qwen-turbo', 'qwen-plus', 'qwen-max']:
+            return dashscope_invoke(prompt, data, online)
+        # 使用 Minimax 模型
+        elif online in ['abab6-chat', 'abab5.5-chat', 'abab5.5s-chat']:
+            return minimax_invoke(prompt, data, online)
+        # 使用 KimiChat 模型
+        elif online in ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']:
+            return moonshot_invoke(prompt, data, online)
+        # 使用百度千帆平台的模型
+        elif online in ['ERNIE-Bot-4', 'ERNIE-Bot']:
+            return qianfan_invoke(prompt, data)
         else:
             return ''
     else:
-        return (prompt | llm).invoke(data).content
+        return local_invoke(prompt, data)
 
 if __name__ == '__main__':
-    print(invoke(ChatPromptTemplate.from_messages([
+    print(qianfan_invoke(ChatPromptTemplate.from_messages([
         HumanMessagePromptTemplate.from_template('''
 你是一个提示工程师，现在你需要拟写一段提示词，完成以下任务：模型将收到若干个QA对，模型需要为QA对的质量进行评估，具有如下标准的QA对应该被称为“劣”：
 -   回答提供的信息不足以解决问题。
@@ -83,4 +209,4 @@ if __name__ == '__main__':
 模型的输出应该为一个列表，内容为输入的QA对个数个“优”或“劣”。
 下面，请你开始拟写提示词！
 ''')
-    ]), {}))
+    ]), {}, 'ERNIE-Bot'))
