@@ -1,4 +1,5 @@
 import time
+import json
 import random
 import requests
 
@@ -11,6 +12,8 @@ import qianfan
 
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, AIMessagePromptTemplate, PromptTemplate, MessagesPlaceholder
+
+api_keys = json.load(open('../../api_key.json', 'r', encoding='utf-8'))
 
 class log:
     name: str
@@ -43,17 +46,18 @@ def local_invoke(prompt, data:dict) -> str:
 
 def moonshot_invoke(prompt, data:dict, model:str) -> str:
     '''调用 KimiChat 模型'''
-    global moonshot_llm
+    global moonshot_llm, api_keys
     if moonshot_llm is None:
         moonshot_llm = ChatOpenAI(
             model_name=model,
             base_url='https://api.moonshot.cn/v1',
-            api_key='sk-IHzBECqwLRUoejNsgTujFznlnAsU6W46tHU2uR9kOvZoWV3O',
+            api_key=api_keys['kimi'],
         )
     return (prompt | moonshot_llm).invoke(data).content
 
 def dashscope_invoke(prompt, data:dict, model:str) -> str:
     '''调用阿里灵积平台模型'''
+    global api_keys
     def message_type(s:str):
         '''将消息类型转换为角色名'''
         if s == 'HumanMessage':
@@ -74,6 +78,7 @@ def dashscope_invoke(prompt, data:dict, model:str) -> str:
     # print('调用 token 数：{}'.format(len(prompt.invoke(data).to_string())))
     # return ''
 
+    dashscope.api_key = api_keys['dashscope']
     response = dashscope.Generation.call(
         model = model,
         messages = messages,
@@ -87,6 +92,7 @@ def dashscope_invoke(prompt, data:dict, model:str) -> str:
 
 def minimax_invoke(prompt, data:dict, model:str) -> str:
     '''调用 Minimax 模型'''
+    global api_keys
     def message_type(s:str):
         '''将消息类型转换为角色名'''
         if s == 'HumanMessage':
@@ -98,10 +104,9 @@ def minimax_invoke(prompt, data:dict, model:str) -> str:
         else:
             return 'unknown'
     
-    api_key = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJHcm91cE5hbWUiOiLpmYjmn4_lnYciLCJVc2VyTmFtZSI6IumZiOafj-WdhyIsIkFjY291bnQiOiIiLCJTdWJqZWN0SUQiOiIxNzgyNTg4NTA5NzA2NTIyNjM5IiwiUGhvbmUiOiIxODMxMjQyMjMyNSIsIkdyb3VwSUQiOiIxNzgyNTg4NTA5Njk4MTM0MDMxIiwiUGFnZU5hbWUiOiIiLCJNYWlsIjoiIiwiQ3JlYXRlVGltZSI6IjIwMjQtMDQtMjQgMjA6MDI6MTAiLCJpc3MiOiJtaW5pbWF4In0.UwdVOEkezZ3WUyMIu_tebKugVIu8l5ERnE3g_PkUGSqeEdWZk666JBeXNBNIAjOzXIcsjcPXiRO1Oj8gHf-0rLtnv9vLbhykshOIfIRfrG6JwB1RVILIqsH52JBMcxe86k4BksqmvfmINpwoA5EZazttEx16FlkzCiSaCznu6ih4GVry5yL_YnnFvkwXvJrFOnMf5Uvt_rHZjE9vzlP_aaGoE_F1Bk9NjYzmX2vRK8ApDCpU_H4Go_xnBtrzSI5js-VVTP20ZxQ7Q9vTzsqF9VVNPvfs8gXavapTjuitrwzakKfMlpAwALB6-m6vWXuL4UdCCJlKb0R_EERz9L2h4Q'
     url = 'https://api.minimax.chat/v1/text/chatcompletion_v2'
     headers = {
-        'Authorization': f'Bearer {api_key}',
+        'Authorization': f'Bearer {api_keys["minimax"]}',
         'Content-Type': 'application/json'
     }
     message = prompt.invoke(data).to_messages()
@@ -130,6 +135,7 @@ def minimax_invoke(prompt, data:dict, model:str) -> str:
 
 def qianfan_invoke(prompt, data:dict, model:str) -> str:
     '''调用百度千帆平台模型'''
+    global api_keys
     def message_type(s:str):
         '''将消息类型转换为角色名'''
         if s == 'HumanMessage':
@@ -152,8 +158,8 @@ def qianfan_invoke(prompt, data:dict, model:str) -> str:
     } for i in message]
 
     chat_completion = qianfan.ChatCompletion(
-        ak='3C0MPUVq1IfswBM9a6wH1mlp',
-        sk='cpgfKxtt2yG0Tsc8y6KORjIKzmHXxxRH'
+        ak=api_keys['qianfan']['ak'],
+        sk=api_keys['qianfan']['sk']
     )
     response = chat_completion.do(
         model=model,
@@ -198,7 +204,7 @@ def invoke(prompt, data:dict, online:str=None) -> str:
         return local_invoke(prompt, data)
 
 if __name__ == '__main__':
-    print(qianfan_invoke(ChatPromptTemplate.from_messages([
+    print(invoke(ChatPromptTemplate.from_messages([
         HumanMessagePromptTemplate.from_template('''
 你是一个提示工程师，现在你需要拟写一段提示词，完成以下任务：模型将收到若干个QA对，模型需要为QA对的质量进行评估，具有如下标准的QA对应该被称为“劣”：
 -   回答提供的信息不足以解决问题。
@@ -209,4 +215,4 @@ if __name__ == '__main__':
 模型的输出应该为一个列表，内容为输入的QA对个数个“优”或“劣”。
 下面，请你开始拟写提示词！
 ''')
-    ]), {}, 'ERNIE-Bot'))
+    ]), {}, 'moonshot-v1-8k'))
