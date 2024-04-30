@@ -91,8 +91,8 @@ class MessageHandler:
         else:
             return 'unknown'
 
-    def generate_QA_by_time_block(self):
-        '''创建根据时间和 @ 关系创建消息块，然后由 AI 总结QA'''
+    def create_time_block(self):
+        '''创建根据时间和 @ 关系创建消息块'''
         self.blocks = []
 
         # 根据时间和消息链，划分消息块
@@ -144,29 +144,98 @@ class MessageHandler:
                 else:
                     append_time_block(chain_block_temp)
         split_chains(self.chains)
+    
+    def generate_QA_by_time_block(self):
+        '''然后由 AI 根据消息块总结QA'''
+        self.create_time_block()
+#         prompt = ChatPromptTemplate.from_messages([
+#             SystemMessagePromptTemplate.from_template(
+# '''你是一个教务处的工作人员，你的工作是从给定的对话中提取问答对。
 
+# 工作流程如下：
+# - 你将会收到一段对话，对话中每条消息的格式是：“[日期](用户): 消息”。
+# - 你需要先理解对话内容，然后找出对话中学生提出的问题。
+# - 接着，你需要将相似的多个问题合并，并提取提问中的关键词。
+# - 你需要根据提问内容，将提问放入“{categories}”这几个分类中的一个。
+# - 然后，你要以学生的口吻提出问题。
+# - 最后根据对话内容对每个问题做出详细回答。
+# - 对话中学生提出的问题可能并没有得到解决，此时你应该在回答中输出：“无答案”。
+
+# 工作要求如下：
+# - 生成的提问风格要像真实人类问的问题，而且需要尽量避免代词的出现。但是，尽量避免生成太直白和过于简单的问题。
+# - 生成的答案中请不要出现对依据的直接引用，要符合主流 AI Assistant 的风格，在合适的地方使用换行符以及 markdown 等格式使答案更加美观易读，在保证答案能在依据原文且不包含无关甚至错误内容的情况下，让答案尽量详细。注意，千万不要改变原文的本意，更不要捏造事实。
+# - 关键词应当尽量简短。
+# - 答案依据的上下文内容需要是完整的句子，因此在标记答案依据的引用内容时，每个引用内容一般不超过500字。
+# - 你需要直接按格式分别返回问题（string）、回答（string）、分类（string）、关键词（array）、依据（array）
+# - 请一步步地完成你的工作。
+
+# 输出格式如下：
+# [
+#     {{
+#         "问题": "xxx",
+#         "回答": "xxx",
+#         "分类": "xxx",
+#         "关键词": [
+#             "xxx", ... ,
+#             "xxx"
+#         ],
+#         "依据": [
+#             "xxx", ... ,
+#             "xxx"
+#         ]
+#     }},
+#     {{
+#         "问题": "xxx",
+#         "回答": "xxx",
+#         "分类": "xxx",
+#         "关键词": [
+#             "xxx", ... ,
+#             "xxx"
+#         ],
+#         "依据": [
+#             "xxx", ... ,
+#             "xxx"
+#         ]
+#     }},
+#     ... ,
+#     {{
+#         "问题": "xxx",
+#         "回答": "xxx",
+#         "分类": "xxx",
+#         "关键词": [
+#             "xxx", ... ,
+#             "xxx"
+#         ],
+#         "依据": [
+#             "xxx", ... ,
+#             "xxx"
+#         ]
+#     }}
+# ]
+# '''
+#             ),
+#             HumanMessagePromptTemplate.from_template(
+#                 '对话：\n{messages}\n现在，请开始你的工作！'
+#             )
+#         ])
+        
         prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(
-'''你是一个教务处的工作人员，你的工作是从给定的对话中提取问答对。
+'''
+你是一位出色的聊天记录分析师。我会提供一些消息组成的聊天记录,请你仔细分析这些记录,从中提取出当时的热点话题。
 
-工作流程如下：
-- 你将会收到一段对话，对话中每条消息的格式是：“[日期](用户): 消息”。
-- 你需要先理解对话内容，然后找出对话中学生提出的问题。
-- 接着，你需要将相似的多个问题合并，并提取提问中的关键词。
-- 你需要根据提问内容，将提问放入“{categories}”这几个分类中的一个。
-- 然后，你要以学生的口吻提出问题。
-- 最后根据对话内容对每个问题做出详细回答。
-- 对话中学生提出的问题可能并没有得到解决，此时你应该在回答中输出：“无答案”。
+每个聊天记录的格式均为“[时间](用户): 消息”,你的任务是仔细分析聊天记录中的内容,从中总结出当时的热点话题。一个好的热点话题应该是当时引发大家广泛关注和讨论的核心主题,可以涵盖选课、住宿、社团活动等多个方面。
 
-工作要求如下：
-- 生成的提问风格要像真实人类问的问题，而且需要尽量避免代词的出现。但是，尽量避免生成太直白和过于简单的问题。
-- 生成的答案中请不要出现对依据的直接引用，要符合主流 AI Assistant 的风格，在合适的地方使用换行符以及 markdown 等格式使答案更加美观易读，在保证答案能在依据原文且不包含无关甚至错误内容的情况下，让答案尽量详细。注意，千万不要改变原文的本意，更不要捏造事实。
-- 关键词应当尽量简短。
-- 答案依据的上下文内容需要是完整的句子，因此在标记答案依据的引用内容时，每个引用内容一般不超过500字。
-- 你需要直接按格式分别返回问题（string）、回答（string）、分类（string）、关键词（array）、依据（array）
-- 请一步步地完成你的工作。
+接着，你需要为每个热点话题生成2-3个相关的问答对(QA)。
 
-输出格式如下：
+问题应该是较为通用的,能够覆盖该话题的主要内容。答案可以是对问题的解答、一些建议。
+
+具体要求如下：
+- 生成的问题需要与话题相关，保证对应答案能够在原文中找到，而且有长有短，风格要像真实人类问的问题。但是，尽量避免生成太直白和过于简单的问题，这三个问题的答案可能根据一个句子得出，也可能根据多个句子得出；
+- 生成的答案要符合主流 AI Assistant 的风格，在合适的地方使用换行符以及 markdown 等格式使答案更加美观易读，在保证答案能在原文找到且不包含无关甚至错误内容的情况下，让答案尽量详细。注意，千万不要改变原文的本意，更不要捏造事实；
+
+请用以下格式书写你的输出:
+
 [
     {{
         "问题": "xxx",
@@ -181,20 +250,7 @@ class MessageHandler:
             "xxx"
         ]
     }},
-    {{
-        "问题": "xxx",
-        "回答": "xxx",
-        "分类": "xxx",
-        "关键词": [
-            "xxx", ... ,
-            "xxx"
-        ],
-        "依据": [
-            "xxx", ... ,
-            "xxx"
-        ]
-    }},
-    ... ,
+    ...,
     {{
         "问题": "xxx",
         "回答": "xxx",
@@ -209,13 +265,16 @@ class MessageHandler:
         ]
     }}
 ]
+
+● Q、A：问答对文本
+● type：所属分类，应为这些分类中的一个：{categories}
+● keywords：根据提问生成关键词，用于检索
+
+请根据我提供的消息记录,生成相关的QA内容。
 '''
-            ),
-            HumanMessagePromptTemplate.from_template(
-                '对话：\n{messages}\n现在，请开始你的工作！'
-            )
+            ), HumanMessagePromptTemplate.from_template('''聊天记录：\n{messages}\n现在，请开始你的工作！''')
         ])
-        
+
         def run(blocks:list):
             for i in tqdm(range(len(blocks))):
                 if len(blocks[i]) <= 1:
@@ -236,7 +295,8 @@ class MessageHandler:
                         continue
                     
                     try:
-                        res = json.loads(response)
+                        res = re.search(r'^```json(.*)```', response, re.S)
+                        res = json.loads(res.group(1) if res else response)
                         for r in res:
                             for field in ['问题', '回答', '分类', '关键词', '依据']:
                                 if field not in r:
@@ -259,8 +319,6 @@ class MessageHandler:
                         break
                     except Exception as err:
                         self.log.log('出错：{}，模型返回：{}'.format(err, response))
-
-        self.blocks = self.blocks[:20]
 
         threads = []
         thread_num = 5

@@ -367,7 +367,9 @@ class DocumentHandler:
                     if response == '':
                         continue
                     try:
-                        res = json.loads(response)
+                        res = re.search(r'^```json(.*)```', response, re.S)
+                        res = json.loads(res.group(1) if res else response)
+                        
                         for r in res:
                             for field in ['问题', '回答', '分类', '关键词', '依据']:
                                 if field not in r:

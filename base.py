@@ -166,7 +166,7 @@ def qianfan_invoke(prompt, data:dict, model:str) -> str:
     )
     return response['body']['result']
 
-default_online = 'qwen-plus'
+default_online = 'qwen1.5-110b-chat'
 def invoke(prompt, data:dict, online:str=None) -> str:
     '''
         调用模型
@@ -185,7 +185,7 @@ def invoke(prompt, data:dict, online:str=None) -> str:
 
     if online != '':
         # 使用阿里灵积平台的模型
-        if online in ['qwen1.5-14b-chat', 'qwen-turbo', 'qwen-plus', 'qwen-max']:
+        if online in ['qwen1.5-14b-chat', 'qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen1.5-110b-chat', 'qwen1.5-32b-chat']:
             return dashscope_invoke(prompt, data, online)
         # 使用 Minimax 模型
         elif online in ['abab6-chat', 'abab5.5-chat', 'abab5.5s-chat']:

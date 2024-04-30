@@ -98,5 +98,6 @@ class Generator:
             self.save()
 
 if __name__ == '__main__':
-    a = Generator('TEST', root_path='../TEST', force=True)
-    a.run()
+    a = Generator('Qwen110B_Mix', root_path='../TEST')
+    # a.run()
+    a.db.print()
