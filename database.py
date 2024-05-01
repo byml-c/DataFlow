@@ -73,18 +73,23 @@ class Database:
         self.db_cursor.execute(query)
         return self.db_cursor.fetchall()
 
-    def print(self):
+    def __str__(self):
         '''打印数据库中的所有数据'''
+        message = ''
         data_list = self.fetchall()
         for data in data_list:
             meta = json.loads(data[2])
-            print(f'id: {data[0]}')
-            print(f'time: {data[5]}')
-            print(f'type: {data[1]}')
-            print(f'author: {data[4]}')
-            print(f'source: {data[3]}')
-            print(f'keywords: {meta["keywords"]}')
-            print(f'Q: {meta["Q"]}')
-            print(f'A: {meta["A"]}')
-            print(f'refs: {meta["refs"]}')
-            print('-'*10)
+            message += \
+f'''id: {data[0]}
+time: {data[5]}
+type: {data[1]}
+author: {data[4]}
+source: {data[3]}
+keywords: {meta["keywords"]}
+Q: {meta["Q"]}
+A: {meta["A"]}
+refs: {meta["refs"]}
+'''
+            message += '-'*20 + '\n'
+        return message
+        

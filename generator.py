@@ -98,6 +98,7 @@ class Generator:
             self.save()
 
 if __name__ == '__main__':
-    a = Generator('Qwen110B_Mix', root_path='../TEST')
-    # a.run()
-    a.db.print()
+    a = Generator('Qwen110B_KIMI', root_path='../TEST')
+    a.run()
+    with open('out.txt', 'w', encoding='utf-8') as f:
+        f.write(a.db.__str__())
