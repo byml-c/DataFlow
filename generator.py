@@ -5,6 +5,7 @@ from tqdm import tqdm
 from message import MessageHandler
 from document import DocumentHandler
 from database import Database
+from base import default_online
 
 class Generator:
     uid: str
@@ -27,8 +28,10 @@ class Generator:
 
             if self.status == -1:
                 self.log(f'预加载状态成功，当前进度：未开始运行。')
-            else:
+            elif self.status < len(self.files):
                 self.log(f'预加载状态成功，当前进度：{self.status+1}/{len(self.files)}')
+            else:
+                self.log(f'预加载状态成功，当前进度：运行已完成。')
         else:
             self.status = -1
             self.uid = uid
@@ -70,12 +73,17 @@ class Generator:
                     self.files.append(os.path.join(root, filename))
         self.log(f'加载文件成功！共加载 {len(self.files)} 个文件。')
 
-    def run(self):
+    def run(self, model:str=None):
         '''启动生成器，开始生成 QA 对'''
+        global default_online
+        if model is None:
+            model = default_online
+        self.log(f'生成器启动，使用模型：{model}')
+
         message_handler = MessageHandler()
         document_handler = DocumentHandler()
 
-        for file_id in tqdm(range(len(self.files))):
+        for file_id in tqdm(range(len(self.files)), desc='<generator>'):
             if file_id <= self.status:
                 continue
 
@@ -83,10 +91,10 @@ class Generator:
             output_path = f'./temp/{self.uid}/{file.replace(self.root, "")}'
             if file.split('.')[-1] == 'qa':
                 # print(f'Call message handler input_path={file} output_path={output_path}')
-                message_handler.handle(input_path=file, output_path=output_path)
+                message_handler.handle(input_path=file, output_path=output_path, model=model)
             else:
                 # print(f'Call document handler input_path={file} output_path={output_path}')
-                document_handler.handle(input_path=file, output_path=output_path)
+                document_handler.handle(input_path=file, output_path=output_path, model=model)
 
             output_data = json.load(open(f'{os.path.splitext(output_path)[0]}-save.json', 'r', encoding='utf-8'))
             for data in output_data['qa']:
@@ -98,7 +106,8 @@ class Generator:
             self.save()
 
 if __name__ == '__main__':
-    a = Generator('Qwen110B_KIMI', root_path='../TEST')
-    a.run()
-    with open('out.txt', 'w', encoding='utf-8') as f:
-        f.write(a.db.__str__())
+    for nm in ['GLM3', 'KIMI8k', 'MINI5_5', 'Qwen32B', 'ERNIE3_5']:
+        a = Generator(nm, root_path='../TEST')
+        # a.run('glm-3-turbo')
+        with open(f'{nm}.txt', 'w', encoding='utf-8') as f:
+            f.write(a.db.__str__())

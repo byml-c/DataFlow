@@ -145,97 +145,40 @@ class MessageHandler:
                     append_time_block(chain_block_temp)
         split_chains(self.chains)
     
-    def generate_QA_by_time_block(self):
+    def generate_QA_by_time_block(self, model:str=None):
         '''然后由 AI 根据消息块总结QA'''
         self.create_time_block()
-#         prompt = ChatPromptTemplate.from_messages([
-#             SystemMessagePromptTemplate.from_template(
-# '''你是一个教务处的工作人员，你的工作是从给定的对话中提取问答对。
-
-# 工作流程如下：
-# - 你将会收到一段对话，对话中每条消息的格式是：“[日期](用户): 消息”。
-# - 你需要先理解对话内容，然后找出对话中学生提出的问题。
-# - 接着，你需要将相似的多个问题合并，并提取提问中的关键词。
-# - 你需要根据提问内容，将提问放入“{categories}”这几个分类中的一个。
-# - 然后，你要以学生的口吻提出问题。
-# - 最后根据对话内容对每个问题做出详细回答。
-# - 对话中学生提出的问题可能并没有得到解决，此时你应该在回答中输出：“无答案”。
-
-# 工作要求如下：
-# - 生成的提问风格要像真实人类问的问题，而且需要尽量避免代词的出现。但是，尽量避免生成太直白和过于简单的问题。
-# - 生成的答案中请不要出现对依据的直接引用，要符合主流 AI Assistant 的风格，在合适的地方使用换行符以及 markdown 等格式使答案更加美观易读，在保证答案能在依据原文且不包含无关甚至错误内容的情况下，让答案尽量详细。注意，千万不要改变原文的本意，更不要捏造事实。
-# - 关键词应当尽量简短。
-# - 答案依据的上下文内容需要是完整的句子，因此在标记答案依据的引用内容时，每个引用内容一般不超过500字。
-# - 你需要直接按格式分别返回问题（string）、回答（string）、分类（string）、关键词（array）、依据（array）
-# - 请一步步地完成你的工作。
-
-# 输出格式如下：
-# [
-#     {{
-#         "问题": "xxx",
-#         "回答": "xxx",
-#         "分类": "xxx",
-#         "关键词": [
-#             "xxx", ... ,
-#             "xxx"
-#         ],
-#         "依据": [
-#             "xxx", ... ,
-#             "xxx"
-#         ]
-#     }},
-#     {{
-#         "问题": "xxx",
-#         "回答": "xxx",
-#         "分类": "xxx",
-#         "关键词": [
-#             "xxx", ... ,
-#             "xxx"
-#         ],
-#         "依据": [
-#             "xxx", ... ,
-#             "xxx"
-#         ]
-#     }},
-#     ... ,
-#     {{
-#         "问题": "xxx",
-#         "回答": "xxx",
-#         "分类": "xxx",
-#         "关键词": [
-#             "xxx", ... ,
-#             "xxx"
-#         ],
-#         "依据": [
-#             "xxx", ... ,
-#             "xxx"
-#         ]
-#     }}
-# ]
-# '''
-#             ),
-#             HumanMessagePromptTemplate.from_template(
-#                 '对话：\n{messages}\n现在，请开始你的工作！'
-#             )
-#         ])
-        
         prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(
 '''
-你是一位出色的聊天记录分析师。我会提供一些消息组成的聊天记录，请你仔细分析这些记录，从中提取出当时的热点话题。
+- Role: 聊天记录分析专家
+- Background: 您将接收一组以特定格式编写的聊天记录，并从中提取热点话题，然后生成相关的问答对。
+- Profile: 您是一位专业的聊天记录分析专家，具备深厚的文本分析能力和话题提取技巧。
+- Skills: 您需要运用文本解析、话题识别、问题生成和答案撰写等技能。
+- Goals: 您需要从聊天记录中识别热点话题，并围绕每个话题生成2-3个相关的问答对。
+- Constrains: 您生成的问题应具有普遍性，能够覆盖话题的主要方面，答案应详细且准确，格式需符合指定的JSON结构。
+- OutputFormat: 您需要按照以下JSON格式输出结果，确保每个问答对都包含“问题”、“回答”、“分类”、“关键词”和“依据”。
+- Workflow:
+  1. 仔细阅读提供的聊天记录。
+  2. 识别记录中的热点话题。
+  3. 为每个热点话题生成2-3个相关问答对。
+  4. 确保问题和答案与原文相关，风格自然。
+  5. 使用指定的格式输出问答对。
 
-每个聊天记录的格式均为“[时间](用户): 消息”，你的任务是仔细分析聊天记录中的内容，从中总结出当时的热点话题。一个好的热点话题应该是当时引发大家广泛关注和讨论的核心主题，可以涵盖选课、住宿、社团活动等多个方面。
+- Examples: 
+    - 聊天记录片段：
+[2024.4.30 10:00:00](Alice): 新开的咖啡馆怎么样啊？
+[2024.4.30 10:00:00](Bob): 我觉得新开的咖啡馆很不错，特别是他们的拿铁。
+    - QA: 
+    {{
+        "问题": "新开的咖啡馆有哪些值得推荐的饮品？",
+        "回答": "新开的咖啡馆提供多种饮品，其中拿铁是他们的特色推荐，以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。",
+        "分类": "餐饮推荐",
+        "关键词": ["咖啡馆", "拿铁", "饮品"],
+        "依据": ["我觉得新开的咖啡馆很不错，特别是他们的拿铁。"]
+    }}
 
-接着，你需要为每个热点话题生成2-3个相关的问答对(QA)。
-
-问题应该是较为通用的，能够覆盖该话题的主要内容。答案可以是对问题的解答、一些建议。
-
-具体要求如下：
-- 生成的问题需要与话题相关，保证对应答案能够在原文中找到，而且有长有短，风格要像真实人类问的问题。但是，尽量避免生成太直白和过于简单的问题，这三个问题的答案可能根据一个句子得出，也可能根据多个句子得出；
-- 生成的答案要符合主流 AI Assistant 的风格，在合适的地方使用换行符以及 markdown 等格式使答案更加美观易读，在保证答案能在原文找到且不包含无关甚至错误内容的情况下，让答案尽量详细。注意，千万不要改变原文的本意，更不要捏造事实；
-
-请用以下格式书写你的输出:
-
+以下是您需要遵循的输出格式：
 [
     {{
         "问题": "xxx",
@@ -266,88 +209,18 @@ class MessageHandler:
     }}
 ]
 
-● Q、A：问答对文本
-● type：所属分类，应为这些分类中的一个：{categories}
-● keywords：根据提问生成关键词，用于检索
+- OutputRequirement:
+    - 问题、回答：问答对文本
+    - 分类：所属分类，应为这些分类中的一个：{categories}
+    - 关键词：根据提问生成关键词，用于检索
 
 请根据我提供的消息记录，生成相关的QA内容。如果提供的信息不足以生成QA，请仅输出“无答案”三个字。
 '''
-            ), HumanMessagePromptTemplate.from_template('''聊天记录：\n{messages}\n现在，请开始你的工作！''')
+            ), HumanMessagePromptTemplate.from_template('''聊天记录片段：\n{messages}''')
         ])
 
-#         prompt = ChatPromptTemplate.from_messages([
-#             SystemMessagePromptTemplate.from_template(
-# '''
-# - Role: 聊天记录分析专家
-# - Background: 您将接收一组以特定格式编写的聊天记录，并从中提取热点话题，然后生成相关的问答对。
-# - Profile: 您是一位专业的聊天记录分析专家，具备深厚的文本分析能力和话题提取技巧。
-# - Skills: 您需要运用文本解析、话题识别、问题生成和答案撰写等技能。
-# - Goals: 您需要从聊天记录中识别热点话题，并围绕每个话题生成2-3个相关的问答对。
-# - Constrains: 您生成的问题应具有普遍性，能够覆盖话题的主要方面，答案应详细且准确，格式需符合指定的JSON结构。
-# - OutputFormat: 您需要按照以下JSON格式输出结果，确保每个问答对都包含“问题”、“回答”、“分类”、“关键词”和“依据”。
-# - Workflow:
-#   1. 仔细阅读提供的聊天记录。
-#   2. 识别记录中的热点话题。
-#   3. 为每个热点话题生成2-3个相关问答对。
-#   4. 确保问题和答案与原文相关，风格自然。
-#   5. 使用指定的格式输出问答对。
-
-# - Examples: 
-#     - 聊天记录片段：
-# [2024.4.30 10:00:00](Alice): 新开的咖啡馆怎么样啊？
-# [2024.4.30 10:00:00](Bob): 我觉得新开的咖啡馆很不错，特别是他们的拿铁。
-#     - QA: 
-#     {{
-#         "问题": "新开的咖啡馆有哪些值得推荐的饮品？",
-#         "回答": "新开的咖啡馆提供多种饮品，其中拿铁是他们的特色推荐，以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。",
-#         "分类": "餐饮推荐",
-#         "关键词": ["咖啡馆", "拿铁", "饮品"],
-#         "依据": ["我觉得新开的咖啡馆很不错，特别是他们的拿铁。"]
-#     }}
-
-# 以下是您需要遵循的输出格式：
-# [
-#     {{
-#         "问题": "xxx",
-#         "回答": "xxx",
-#         "分类": "xxx",
-#         "关键词": [
-#             "xxx", ... ,
-#             "xxx"
-#         ],
-#         "依据": [
-#             "xxx", ... ,
-#             "xxx"
-#         ]
-#     }},
-#     ...,
-#     {{
-#         "问题": "xxx",
-#         "回答": "xxx",
-#         "分类": "xxx",
-#         "关键词": [
-#             "xxx", ... ,
-#             "xxx"
-#         ],
-#         "依据": [
-#             "xxx", ... ,
-#             "xxx"
-#         ]
-#     }}
-# ]
-
-# - OutputRequirement:
-# ● 问题、回答：问答对文本
-# ● 分类：所属分类，应为这些分类中的一个：{categories}
-# ● 关键词：根据提问生成关键词，用于检索
-
-# 请根据我提供的消息记录，生成相关的QA内容。如果提供的信息不足以生成QA，请仅输出“无答案”三个字。
-# '''
-#             ), HumanMessagePromptTemplate.from_template('''聊天记录片段：\n{messages}''')
-#         ])
-
-        def run(blocks:list):
-            for i in tqdm(range(len(blocks))):
+        def run(blocks:list, name:str):
+            for i in tqdm(range(len(blocks)), desc=f'<message {name}>'):
                 if len(blocks[i]) <= 1:
                     self.error.append(blocks[i])
                     continue
@@ -361,7 +234,7 @@ class MessageHandler:
                     response = invoke(prompt, {
                         'messages': messages,
                         'categories': '、'.join(self.categories)
-                    })
+                    }, model)
                     if response == '':
                         continue
                     if re.search('无答案', response):
@@ -398,7 +271,10 @@ class MessageHandler:
         thread_num = 5
         thread_blocks_size = max(len(self.blocks) // thread_num, 1)
         for i in range(0, len(self.blocks), thread_blocks_size):
-            t = Thread(target=run, args=([self.blocks[i:i+thread_blocks_size]]))
+            t = Thread(
+                target=run,
+                args=(self.blocks[i:i+thread_blocks_size], f'subthread {i//thread_blocks_size+1}')
+            )
             t.start()
             threads.append(t)
         for t in threads:
@@ -552,7 +428,7 @@ class MessageHandler:
             temp_len += 1
         self.messages = message_temp
     
-    def handle(self, input_path:str, output_path:str='./output.txt', init:bool=None):
+    def handle(self, input_path:str, output_path:str='./output.txt', init:bool=None, model:str=None):
         '''调用此函数一键处理消息文件'''
         if init is None:
             init = not os.path.exists(output_path)
@@ -565,7 +441,7 @@ class MessageHandler:
 
         if init or len(self.qa) == 0:
             self.log.log('正在生成QA对')
-            self.generate_QA_by_time_block()
+            self.generate_QA_by_time_block(model)
             self.save(output_path)
             self.log.log('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
         self.log.log('{} 处理完成，输出至：{}'.format(input_path, output_path))

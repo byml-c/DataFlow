@@ -1,3 +1,4 @@
+import os
 import time
 import json
 import random
@@ -7,8 +8,8 @@ import requests
 import dashscope
 from http import HTTPStatus
 
-# 百度千帆 SDK
-import qianfan
+# 智普 SDK
+from zhipuai import ZhipuAI
 
 from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, AIMessagePromptTemplate, PromptTemplate, MessagesPlaceholder
@@ -42,7 +43,7 @@ def local_invoke(prompt, data:dict) -> str:
         )
     return (prompt | local_llm).invoke(data).content
 
-def moonshot_invoke(prompt, data:dict, model:str) -> str:
+def moonshot_invoke(prompt, data:dict, model:str, max_try=3) -> str:
     '''调用 KimiChat 模型'''
     global moonshot_llm, api_keys
     if moonshot_llm is None:
@@ -51,7 +52,14 @@ def moonshot_invoke(prompt, data:dict, model:str) -> str:
             base_url='https://api.moonshot.cn/v1',
             api_key=api_keys['kimi'],
         )
-    return (prompt | moonshot_llm).invoke(data).content
+    ret = ''
+    while max_try > 0:
+        max_try -= 1
+        try:
+            ret = (prompt | moonshot_llm).invoke(data).content
+        except Exception as err:
+            time.sleep(1.2)
+    return ret
 
 def dashscope_invoke(prompt, data:dict, model:str) -> str:
     '''调用阿里灵积平台模型'''
@@ -134,7 +142,30 @@ def minimax_invoke(prompt, data:dict, model:str) -> str:
 def qianfan_invoke(prompt, data:dict, model:str) -> str:
     '''调用百度千帆平台模型'''
     global api_keys
-    def message_type(s:str):
+    os.environ['QIANFAN_ACCESS_KEY'] = api_keys['qianfan']['ak']
+    os.environ['QIANFAN_SECRET_KEY'] = api_keys['qianfan']['sk']
+    url_map = {
+        'ERNIE3.5': 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/ernie-3.5-8k-preview',
+        'ERNIE4.0': 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/ernie-4.0-8k-preview'
+    }
+
+    def get_access_token() -> str:
+        '''
+            根据 assess_key 和 secret_key 获取access_token
+        '''
+        global api_keys 
+        url = f'https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={api_keys["qianfan"]["ak"]}&client_secret={api_keys["qianfan"]["sk"]}'
+        
+        payload = json.dumps('')
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+        
+        response = requests.post(url=url, headers=headers, data=payload)
+        return response.json().get('access_token')
+    
+    def message_type(s:str) -> str:
         '''将消息类型转换为角色名'''
         if s == 'HumanMessage':
             return 'user'
@@ -155,19 +186,47 @@ def qianfan_invoke(prompt, data:dict, model:str) -> str:
         'content': i.content.strip()
     } for i in message]
 
-    chat_completion = qianfan.ChatCompletion(
-        ak=api_keys['qianfan']['ak'],
-        sk=api_keys['qianfan']['sk']
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    url = f'{url_map[model]}?access_token={get_access_token()}'
+    response = requests.post(
+        url=url, headers=headers,
+        data=json.dumps({
+            'messages': messages,
+            'system': system_prompt
+        })
     )
-    response = chat_completion.do(
-        model=model,
-        messages=messages,
-        system=system_prompt
-    )
-    return response['body']['result']
+    return response.json().get('result', '')
 
-default_online = 'qwen1.5-110b-chat'
-def invoke(prompt, data:dict, online:str=None) -> str:
+def zhipu_invoke(prompt, data:dict, model:str) -> str:
+    global api_keys
+    def message_type(s:str) -> str:
+        '''将消息类型转换为角色名'''
+        if s == 'HumanMessage':
+            return 'user'
+        if s == 'SystemMessage':
+            return 'system'
+        if s == 'AIMessage':
+            return 'assistant'
+        else:
+            return 'unknown'
+    
+    message = prompt.invoke(data).to_messages()
+    messages = [{
+        'role': message_type(type(i).__name__),
+        'content': i.content.strip()
+    } for i in message]
+
+    client = ZhipuAI(api_key=api_keys['zhipu'])
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages
+    )
+    return response.choices[0].message.content
+
+default_online = 'qwen1.5-32b-chat'
+def invoke(prompt, data:dict, online:str=None, max_try=3) -> str:
     '''
         调用模型
 
@@ -183,23 +242,33 @@ def invoke(prompt, data:dict, online:str=None) -> str:
     if online is None:
         online = default_online
 
-    if online != '':
-        # 使用阿里灵积平台的模型
-        if online in ['qwen1.5-14b-chat', 'qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen1.5-110b-chat', 'qwen1.5-32b-chat']:
-            return dashscope_invoke(prompt, data, online)
-        # 使用 Minimax 模型
-        elif online in ['abab6-chat', 'abab5.5-chat', 'abab5.5s-chat']:
-            return minimax_invoke(prompt, data, online)
-        # 使用 KimiChat 模型
-        elif online in ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']:
-            return moonshot_invoke(prompt, data, online)
-        # 使用百度千帆平台的模型
-        elif online in ['ERNIE-Bot-4', 'ERNIE-Bot']:
-            return qianfan_invoke(prompt, data)
-        else:
-            return ''
-    else:
-        return local_invoke(prompt, data)
+    while max_try > 0:
+        max_try -= 1
+        try:
+            if online != '':
+                # 使用阿里灵积平台的模型
+                if online in ['qwen1.5-14b-chat', 'qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen1.5-110b-chat', 'qwen1.5-32b-chat']:
+                    return dashscope_invoke(prompt, data, online)
+                # 使用 Minimax 模型
+                elif online in ['abab6-chat', 'abab5.5-chat', 'abab5.5s-chat']:
+                    return minimax_invoke(prompt, data, online)
+                # 使用 KimiChat 模型
+                elif online in ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k']:
+                    return moonshot_invoke(prompt, data, online)
+                # 使用百度千帆平台的模型
+                elif online in ['ERNIE4.0', 'ERNIE3.5']:
+                    return qianfan_invoke(prompt, data, online)
+                # 使用智普 GLM 模型
+                elif online in ['glm-4', 'glm-3-turbo']:
+                    return zhipu_invoke(prompt, data, online)
+                else:
+                    return ''
+            else:
+                return local_invoke(prompt, data)
+        except Exception as err:
+            print(f'<base> 模型调用报错: {err}')
+            continue
+    return ''
 
 if __name__ == '__main__':
     print(invoke(ChatPromptTemplate.from_messages([
@@ -213,4 +282,4 @@ if __name__ == '__main__':
 模型的输出应该为一个列表，内容为输入的QA对个数个“优”或“劣”。
 下面，请你开始拟写提示词！
 ''')
-    ]), {}, 'moonshot-v1-8k'))
+    ]), {}, 'glm-4'))

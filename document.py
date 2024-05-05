@@ -286,84 +286,84 @@ class DocumentHandler:
             ensure_ascii=False
         )
     
-    def generate_QA_by_summary_blocks(self):
+    def generate_QA_by_summary_blocks(self, model:str=None):
         prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(
-'''你是一个教务处的工作人员，你的工作是从给定的文档中提取问答对。
+'''
+- Role: 文档内容分析专家
+- Background: 您将接收一个包含多种信息的文档，并从中提取关键信息，然后生成相关的问答对。
+- Profile: 您是一位专业的文档内容分析专家，具备深厚的文本分析能力和信息提取技巧。
+- Skills: 您需要运用文本解析、信息提取、问题生成和答案撰写等技能。
+- Goals: 您需要从文档中识别关键信息，并围绕每个关键信息点生成相关的问答对。
+- Constrains: 您生成的问题应具有针对性，能够覆盖文档内容的主要方面，答案应详细且准确，格式需符合指定的JSON结构。
+- OutputFormat: 您需要按照以下JSON格式输出结果，确保每个问答对都包含“问题”、“回答”、“分类”、“关键词”和“依据”。
+- Workflow:
+  1. 仔细阅读提供的文档内容。
+  2. 识别文档中的关键信息点。
+  3. 为每个关键信息点生成相关的问答对。
+  4. 确保问题和答案与文档内容相关，风格自然。
+  5. 使用指定的格式输出问答对。
 
-工作流程如下：
-- 你将会收到一段文档，你需要先理解文档内容。
-- 然后，你需要想出学生可能针对文档提出的问题，并提取提问中的关键词。
-- 你需要根据提问内容，将提问放入“{categories}”这几个分类中的一个。
-- 然后，你要以学生的口吻提出问题。
-- 最后根据对话内容对每个问题做出详细回答。
-- 对话中学生提出的问题可能并没有得到解决，此时你应该在回答中输出：“无答案”。
+- Examples: 
+    - 文档：
+        "新开的咖啡馆提供多种饮品，其中拿铁是他们的特色推荐，以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。"
+    - QA: 
+        {{
+            "问题": "新开的咖啡馆的特色饮品是什么？",
+            "回答": "新开的咖啡馆的特色饮品是拿铁，它以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。",
+            "分类": "餐饮服务",
+            "关键词": ["咖啡馆", "特色饮品", "拿铁"],
+            "依据": ["新开的咖啡馆提供多种饮品，其中拿铁是他们的特色推荐，以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。"]
+        }}
 
-工作要求如下：
-- 生成的提问风格要像真实人类问的问题，而且需要尽量避免代词的出现。但是，尽量避免生成太直白和过于简单的问题。
-- 生成的答案中请不要出现对依据的直接引用，要符合主流 AI Assistant 的风格，在合适的地方使用换行符以及 markdown 等格式使答案更加美观易读，在保证答案能在依据原文且不包含无关甚至错误内容的情况下，让答案尽量详细。注意，千万不要改变原文的本意，更不要捏造事实。
-- 关键词应当尽量简短。
-- 答案依据的上下文内容需要是完整的句子，因此在标记答案依据的引用内容时，每个引用内容一般不超过500字。
-- 你需要直接按格式分别返回问题（string）、回答（string）、分类（string）、关键词（array）、依据（array）
-- 请一步步地完成你的工作。
-
-输出格式如下：
+以下是您需要遵循的输出格式：
 [
     {{
         "问题": "xxx",
         "回答": "xxx",
         "分类": "xxx",
         "关键词": [
-            "xxx", ... ,
+            "xxx", 
             "xxx"
         ],
         "依据": [
-            "xxx", ... ,
+            "xxx", 
             "xxx"
         ]
     }},
+    ...
     {{
         "问题": "xxx",
         "回答": "xxx",
         "分类": "xxx",
         "关键词": [
-            "xxx", ... ,
+            "xxx", 
             "xxx"
         ],
         "依据": [
-            "xxx", ... ,
-            "xxx"
-        ]
-    }},
-    ... ,
-    {{
-        "问题": "xxx",
-        "回答": "xxx",
-        "分类": "xxx",
-        "关键词": [
-            "xxx", ... ,
-            "xxx"
-        ],
-        "依据": [
-            "xxx", ... ,
+            "xxx", 
             "xxx"
         ]
     }}
 ]
+
+- OutputRequirement:
+    - 问题、回答：问答对文本
+    - 分类：所属分类，应为这些分类中的一个：{categories}
+    - 关键词：根据提问生成关键词，用于检索
+
+请根据我提供的文档内容，生成相关的QA内容。如果提供的信息不足以生成QA，请仅输出“无答案”三个字。
 '''
-            ),
-            HumanMessagePromptTemplate.from_template(
-                '文档：\n{document}\n现在，请开始你的工作！'
-            )
+            ), HumanMessagePromptTemplate.from_template('''文档：\n{document}''')
         ])
         
-        def run(blocks:list):
-            for i in tqdm(range(len(blocks))):
+        def run(blocks:list, name:str):
+            for i in tqdm(range(len(blocks)), desc=f'<document {name}>'):
                 while True:
                     response = invoke(prompt, {
                         'document': blocks[i]['page_content'],
                         'categories': '、'.join(self.categories)
-                    })
+                    }, online=model)
                     if response == '':
                         continue
                     try:
@@ -400,7 +400,10 @@ class DocumentHandler:
             thread_num = 5
             thread_blocks_size = max(len(self.blocks) // thread_num, 1)
             for i in range(0, len(self.blocks), thread_blocks_size):
-                t = Thread(target=run, args=([self.blocks[i:i+thread_blocks_size]]))
+                t = Thread(
+                    target=run,
+                    args=(self.blocks[i:i+thread_blocks_size], f'subthread {i//thread_blocks_size+1}')
+                )
                 t.start()
                 threads.append(t)
             for t in threads:
@@ -438,7 +441,7 @@ class DocumentHandler:
         self.blocks = self_obj['blocks']
 
     def handle(self, input_path, output_path='./output.txt',
-               size=512, cover=128, type='auto', encoding='utf-8', index:bool=True, init:bool=None):
+               size=512, cover=128, type='auto', encoding='utf-8', index:bool=True, init:bool=None, model:str=None):
         '''调用此函数一键处理文档'''
         if init is None:
             init = not os.path.exists(output_path+'.blocks')
@@ -458,7 +461,7 @@ class DocumentHandler:
 
         if init or len(self.qa) == 0:
             self.log.log('正在生成QA对')
-            self.generate_QA_by_summary_blocks()
+            self.generate_QA_by_summary_blocks(model)
             self.save(output_path)
             self.log.log('QA对生成完成，生成QA对：{}个'.format(len(self.qa)))
         self.log.log('{} 处理完成，输出至：{}'.format(input_path, output_path))
