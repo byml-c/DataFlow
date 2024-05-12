@@ -311,7 +311,7 @@ class DocumentHandler:
         {{
             "问题": "新开的咖啡馆的特色饮品是什么？",
             "回答": "新开的咖啡馆的特色饮品是拿铁，它以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。",
-            "分类": "餐饮服务",
+            "分类": "校园生活服务",
             "关键词": ["咖啡馆", "特色饮品", "拿铁"],
             "依据": ["新开的咖啡馆提供多种饮品，其中拿铁是他们的特色推荐，以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。"]
         }}
@@ -357,55 +357,69 @@ class DocumentHandler:
             ), HumanMessagePromptTemplate.from_template('''文档：\n{document}''')
         ])
         
-        def run(blocks:list, name:str):
-            for i in tqdm(range(len(blocks)), desc=f'<document {name}>'):
-                while True:
-                    response = invoke(prompt, {
-                        'document': blocks[i]['page_content'],
-                        'categories': '、'.join(self.categories)
-                    }, online=model)
-                    if response == '':
-                        continue
-                    try:
-                        res = re.search(r'^```json(.*)```', response, re.S)
-                        res = json.loads(res.group(1) if res else response)
-                        
-                        for r in res:
-                            for field in ['问题', '回答', '分类', '关键词', '依据']:
-                                if field not in r:
-                                    raise ValueError('模型返回格式错误')
-                            if r['分类'] not in self.categories:
-                                raise ValueError('分类错误')
-                            if type(r['关键词']) != list:
+        def run(block:dict, max_try=3):
+            while max_try > 0:
+                max_try -= 1
+                response = invoke(prompt, {
+                    'document': block['page_content'],
+                    'categories': '、'.join(self.categories)
+                }, online=model)
+                if response == '':
+                    continue
+                if re.search('无答案', response):
+                    self.error.append(block)
+                    break
+                try:
+                    res = re.search(r'```json((.|[\n\r])*)```', response, re.S)
+                    res = json.loads(res.group(1) if res else response)
+                    
+                    for r in res:
+                        for field in ['问题', '回答', '分类', '关键词', '依据']:
+                            if field not in r:
                                 raise ValueError('模型返回格式错误')
-                            if type(r['依据']) != list:
-                                r['依据'] = [r['依据']]
-                            format_r = {
-                                'Q': r['问题'],
-                                'A': r['回答'],
-                                'type': r['分类'].replace(' ', ''),
-                                'keywords': [i.replace(' ', '') for i in r['关键词']],
-                                'refs': r['依据'],
-                                'author': 'AI'
-                            }
-                            self.qa.append(format_r)
-                        break
-                    except Exception as err:
-                        self.log.log('出错：{}，模型返回：{}'.format(err, response))
+                        if r['分类'] not in self.categories:
+                            raise ValueError('分类错误')
+                        if type(r['关键词']) != list:
+                            raise ValueError('模型返回格式错误')
+                        if type(r['依据']) != list:
+                            r['依据'] = [r['依据']]
+                        format_r = {
+                            'Q': r['问题'],
+                            'A': r['回答'],
+                            'type': r['分类'].replace(' ', ''),
+                            'keywords': [i.replace(' ', '') for i in r['关键词']],
+                            'refs': r['依据'],
+                            'author': 'AI'
+                        }
+                        self.qa.append(format_r)
+                    break
+                except Exception as err:
+                    self.log.log('出错：{}，模型返回：{}'.format(err, response))
+            # 如果超过最大尝试次数，将其加入错误列表
+            self.error.append(block)
         
         if len(self.blocks) == 0:
             self.log.log('文档为空，无法生成QA对')
         else:
             threads = []
             thread_num = 5
-            thread_blocks_size = max(len(self.blocks) // thread_num, 1)
-            for i in range(0, len(self.blocks), thread_blocks_size):
-                t = Thread(
+            
+            for i in tqdm(range(len(self.blocks))):
+                new_thread = Thread(
                     target=run,
-                    args=(self.blocks[i:i+thread_blocks_size], f'subthread {i//thread_blocks_size+1}')
+                    args=(self.blocks[i],)
                 )
-                t.start()
-                threads.append(t)
+                new_thread.start()
+                threads.append(new_thread)
+
+                while len(threads) >= thread_num:
+                    time.sleep(0.5)
+                    temp = []
+                    for t in threads:
+                        if t.is_alive():
+                            temp.append(t)
+                    threads = temp
+            
             for t in threads:
                 t.join()
 
@@ -441,7 +455,7 @@ class DocumentHandler:
         self.blocks = self_obj['blocks']
 
     def handle(self, input_path, output_path='./output.txt',
-               size=512, cover=128, type='auto', encoding='utf-8', index:bool=True, init:bool=None, model:str=None):
+               size=512, cover=64, type='auto', encoding='utf-8', index:bool=True, init:bool=None, model:str=None):
         '''调用此函数一键处理文档'''
         if init is None:
             init = not os.path.exists(output_path+'.blocks')

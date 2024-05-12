@@ -173,7 +173,7 @@ class MessageHandler:
     {{
         "问题": "新开的咖啡馆有哪些值得推荐的饮品？",
         "回答": "新开的咖啡馆提供多种饮品，其中拿铁是他们的特色推荐，以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。",
-        "分类": "餐饮推荐",
+        "分类": "校园生活服务",
         "关键词": ["咖啡馆", "拿铁", "饮品"],
         "依据": ["我觉得新开的咖啡馆很不错，特别是他们的拿铁。"]
     }}
@@ -219,64 +219,71 @@ class MessageHandler:
             ), HumanMessagePromptTemplate.from_template('''聊天记录片段：\n{messages}''')
         ])
 
-        def run(blocks:list, name:str):
-            for i in tqdm(range(len(blocks)), desc=f'<message {name}>'):
-                if len(blocks[i]) <= 1:
-                    self.error.append(blocks[i])
-                    continue
+        def run(block:list, max_try=3):
+            if len(block) <= 1:
+                self.error.append(block)
+                return
+            
+            messages = ''
+            for j in block:
+                msg = self.messages[j]
+                messages += '[{}]({}): {}\n'.format(msg['time'], msg['user'], msg['message'])
+            while max_try > 0:
+                max_try -= 1
                 
-                messages = ''
-                for j in blocks[i]:
-                    msg = self.messages[j]
-                    messages += '[{}]({}): {}\n'.format(msg['time'], msg['user'], msg['message'])
-                while True:
-                    time.sleep(0.5)
-                    response = invoke(prompt, {
-                        'messages': messages,
-                        'categories': '、'.join(self.categories)
-                    }, model)
-                    if response == '':
-                        continue
-                    if re.search('无答案', response):
-                        self.error.append(blocks[i])
-                        break
-                    
-                    try:
-                        res = re.search(r'^```json(.*)```', response, re.S)
-                        res = json.loads(res.group(1) if res else response)
-                        for r in res:
-                            for field in ['问题', '回答', '分类', '关键词', '依据']:
-                                if field not in r:
-                                    raise ValueError('模型返回格式错误')
-                            if r['分类'] not in self.categories:
-                                raise ValueError('分类错误')
-                            if type(r['关键词']) != list:
+                response = invoke(prompt, {
+                    'messages': messages,
+                    'categories': '、'.join(self.categories)
+                }, model)
+                if response == '':
+                    continue
+                if re.search('无答案', response):
+                    self.error.append(block)
+                    break
+                
+                try:
+                    res = re.search(r'```json((.|[\n\r])*)```', response, re.S)
+                    res = json.loads(res.group(1) if res else response)
+                    for r in res:
+                        for field in ['问题', '回答', '分类', '关键词', '依据']:
+                            if field not in r:
                                 raise ValueError('模型返回格式错误')
-                            if type(r['依据']) != list:
-                                r['依据'] = [r['依据']]
-                            format_r = {
-                                'Q': r['问题'],
-                                'A': r['回答'],
-                                'type': r['分类'].replace(' ', ''),
-                                'keywords': [i.replace(' ', '') for i in r['关键词']],
-                                'refs': r['依据'],
-                                'author': 'AI'
-                            }
-                            self.qa.append(format_r)
-                        break
-                    except Exception as err:
-                        self.log.log('出错：{}，模型返回：{}'.format(err, response), 'E')
+                        if r['分类'] not in self.categories:
+                            raise ValueError('分类错误')
+                        if type(r['关键词']) != list:
+                            raise ValueError('模型返回格式错误')
+                        if type(r['依据']) != list:
+                            r['依据'] = [r['依据']]
+                        format_r = {
+                            'Q': r['问题'],
+                            'A': r['回答'],
+                            'type': r['分类'].replace(' ', ''),
+                            'keywords': [i.replace(' ', '') for i in r['关键词']],
+                            'refs': r['依据'],
+                            'author': 'AI'
+                        }
+                        self.qa.append(format_r)
+                    break
+                except Exception as err:
+                    self.log.log('出错：{}，模型返回：{}'.format(err, response), 'E')
+            # 如果超过最大尝试次数，将其加入错误列表
+            self.error.append(block)
 
         threads = []
         thread_num = 5
-        thread_blocks_size = max(len(self.blocks) // thread_num, 1)
-        for i in range(0, len(self.blocks), thread_blocks_size):
-            t = Thread(
+        
+        for i in tqdm(range(len(self.blocks))):
+            new_thread = Thread(
                 target=run,
-                args=(self.blocks[i:i+thread_blocks_size], f'subthread {i//thread_blocks_size+1}')
+                args=(self.blocks[i],)
             )
-            t.start()
-            threads.append(t)
+            new_thread.start()
+            threads.append(new_thread)
+
+            while len(threads) >= thread_num:
+                time.sleep(0.5)
+                threads = [t for t in threads if t.is_alive()]
+        
         for t in threads:
             t.join()
 

@@ -106,8 +106,5 @@ class Generator:
             self.save()
 
 if __name__ == '__main__':
-    for nm in ['GLM3', 'KIMI8k', 'MINI5_5', 'Qwen32B', 'ERNIE3_5']:
-        a = Generator(nm, root_path='../TEST')
-        # a.run('glm-3-turbo')
-        with open(f'{nm}.txt', 'w', encoding='utf-8') as f:
-            f.write(a.db.__str__())
+    a = Generator('BATCH01', root_path='../RawData')
+    a.run('qwen1.5-110b-chat')
