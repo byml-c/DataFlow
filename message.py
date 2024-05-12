@@ -219,7 +219,7 @@ class MessageHandler:
             ), HumanMessagePromptTemplate.from_template('''聊天记录片段：\n{messages}''')
         ])
 
-        def run(block:list, max_try=3):
+        def run(block:list):
             if len(block) <= 1:
                 self.error.append(block)
                 return
@@ -228,16 +228,17 @@ class MessageHandler:
             for j in block:
                 msg = self.messages[j]
                 messages += '[{}]({}): {}\n'.format(msg['time'], msg['user'], msg['message'])
-            while max_try > 0:
-                max_try -= 1
-                
+            while True:
                 response = invoke(prompt, {
                     'messages': messages,
                     'categories': '、'.join(self.categories)
                 }, model)
+
                 if response == '':
+                    time.sleep(0.5)
                     continue
                 if re.search('无答案', response):
+                    self.log.log(f'无答案，加入错误列表！数据：\n{block}\n返回：\n{response}', 'E')
                     self.error.append(block)
                     break
                 
@@ -266,8 +267,7 @@ class MessageHandler:
                     break
                 except Exception as err:
                     self.log.log('出错：{}，模型返回：{}'.format(err, response), 'E')
-            # 如果超过最大尝试次数，将其加入错误列表
-            self.error.append(block)
+                    time.sleep(0.5)
 
         threads = []
         thread_num = 5

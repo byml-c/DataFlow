@@ -31,6 +31,7 @@ class log:
         if level in ['E']:
             print(f'<{self.name}> {msg}')
 
+logger = log('base')
 local_llm, moonshot_llm = None, None
 def local_invoke(prompt, data:dict) -> str:
     '''调用本地模型'''
@@ -92,9 +93,11 @@ def dashscope_invoke(prompt, data:dict, model:str) -> str:
         seed = random.randint(1, 10000),
         result_format = 'text'
     )
+
     if response.status_code == HTTPStatus.OK:
         return response.output.text
     else:
+        logger.log(f'<base> 模型调用报错，详细信息: {response}，输入内容：{messages}', 'E')
         return ''
 
 def minimax_invoke(prompt, data:dict, model:str) -> str:
@@ -283,4 +286,4 @@ if __name__ == '__main__':
 模型的输出应该为一个列表，内容为输入的QA对个数个“优”或“劣”。
 下面，请你开始拟写提示词！
 ''')
-    ]), {}, 'glm-4'))
+    ]), {}, 'qwen1.5-32b-chat'))

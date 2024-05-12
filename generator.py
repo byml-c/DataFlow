@@ -73,15 +73,12 @@ class Generator:
                     self.files.append(os.path.join(root, filename))
         self.log(f'加载文件成功！共加载 {len(self.files)} 个文件。')
 
-    def run(self, model:str=None):
+    def run(self, model:str=None, retry:bool=False):
         '''启动生成器，开始生成 QA 对'''
         global default_online
         if model is None:
             model = default_online
         self.log(f'生成器启动，使用模型：{model}')
-
-        message_handler = MessageHandler()
-        document_handler = DocumentHandler()
 
         for file_id in tqdm(range(len(self.files)), desc='<generator>'):
             if file_id <= self.status:
@@ -91,9 +88,11 @@ class Generator:
             output_path = f'./temp/{self.uid}/{file.replace(self.root, "")}'
             if file.split('.')[-1] == 'qa':
                 # print(f'Call message handler input_path={file} output_path={output_path}')
+                message_handler = MessageHandler()
                 message_handler.handle(input_path=file, output_path=output_path, model=model)
             else:
                 # print(f'Call document handler input_path={file} output_path={output_path}')
+                document_handler = DocumentHandler()
                 document_handler.handle(input_path=file, output_path=output_path, model=model)
 
             output_data = json.load(open(f'{os.path.splitext(output_path)[0]}-save.json', 'r', encoding='utf-8'))
@@ -107,4 +106,4 @@ class Generator:
 
 if __name__ == '__main__':
     a = Generator('BATCH01', root_path='../RawData')
-    a.run('qwen1.5-110b-chat')
+    a.run('qwen1.5-32b-chat')

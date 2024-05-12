@@ -368,21 +368,27 @@ class DocumentHandler:
             ), HumanMessagePromptTemplate.from_template('''文档：\n{document}''')
         ])
         
-        def run(block:dict, max_try=3):
-            while max_try > 0:
-                max_try -= 1
+        def run(block:dict):
+            while True:
                 response = invoke(prompt, {
                     'document': block['page_content'],
                     'categories': '、'.join(self.categories)
                 }, online=model)
+
                 if response == '':
+                    self.log.log('模型返回为空，重试！数据：\n{}'.format(block))
+                    time.sleep(0.5)
                     continue
                 if re.search('无答案', response):
+                    self.log.log(f'无答案，加入错误列表！数据：\n{block}\n返回：\n{response}', 'E')
                     self.error.append(block)
                     break
+
                 try:
                     res = re.search(r'```json((.|[\n\r])*)```', response, re.S)
                     res = json.loads(res.group(1) if res else response)
+                    if type(res) == dict:
+                        res = [res]
                     
                     for r in res:
                         for field in ['问题', '回答', '分类', '关键词', '依据']:
@@ -406,8 +412,7 @@ class DocumentHandler:
                     break
                 except Exception as err:
                     self.log.log('出错：{}，模型返回：{}'.format(err, response))
-            # 如果超过最大尝试次数，将其加入错误列表
-            self.error.append(block)
+                    time.sleep(0.5)
         
         if len(self.blocks) == 0:
             self.log.log('文档为空，无法生成QA对')
