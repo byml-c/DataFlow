@@ -33,6 +33,8 @@ class log:
 
 logger = log('base')
 local_llm, moonshot_llm = None, None
+last_invoke, invoke_duration = 0, 6
+
 def local_invoke(prompt, data:dict) -> str:
     '''调用本地模型'''
     global local_llm
@@ -98,7 +100,12 @@ def dashscope_invoke(prompt, data:dict, model:str) -> str:
         return response.output.text
     else:
         logger.log(f'<base> 模型调用报错，详细信息: {response}，输入内容：{messages}', 'E')
-        return ''
+        if response.code == 'Throttling.RateQuota':
+            time.sleep(10)
+        if response.code == 'DataInspectionFailed':
+            return '<ERROR>'
+        else:
+            return ''
 
 def minimax_invoke(prompt, data:dict, model:str) -> str:
     '''调用 Minimax 模型'''
@@ -245,6 +252,12 @@ def invoke(prompt, data:dict, online:str=None, max_try=3) -> str:
     '''
     if online is None:
         online = default_online
+
+    global last_invoke, invoke_duration
+    now_time = int(time.time())
+    if now_time - last_invoke < invoke_duration:
+        time.sleep(invoke_duration - (now_time - last_invoke))
+    last_invoke = now_time
 
     while max_try > 0:
         max_try -= 1

@@ -306,28 +306,11 @@ class DocumentHandler:
 - Profile: 您是一位专业的文档内容分析专家，具备深厚的文本分析能力和信息提取技巧。
 - Skills: 您需要运用文本解析、信息提取、问题生成和答案撰写等技能。
 - Goals: 您需要从文档中识别关键信息，并围绕每个关键信息点生成相关的问答对。
-- Constrains: 您生成的问题应具有针对性，能够覆盖文档内容的主要方面，答案应详细且准确，格式需符合指定的JSON结构。
+- Constrains: 
+    - 您生成的问题应具有针对性，能够覆盖文档内容的主要方面，答案应详细且准确，格式需符合指定的JSON结构。
+    - 如果提供的信息不足以生成QA，请输出“无答案”三个字。
 - OutputFormat: 您需要按照以下JSON格式输出结果，确保每个问答对都包含“问题”、“回答”、“分类”、“关键词”和“依据”。
-- Workflow:
-  1. 仔细阅读提供的文档内容。
-  2. 识别文档中的关键信息点。
-  3. 为每个关键信息点生成相关的问答对。
-  4. 确保问题和答案与文档内容相关，风格自然。
-  5. 使用指定的格式输出问答对。
-
-- Examples: 
-    - 文档：
-        "新开的咖啡馆提供多种饮品，其中拿铁是他们的特色推荐，以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。"
-    - QA: 
-        {{
-            "问题": "新开的咖啡馆的特色饮品是什么？",
-            "回答": "新开的咖啡馆的特色饮品是拿铁，它以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。",
-            "分类": "校园生活服务",
-            "关键词": ["咖啡馆", "特色饮品", "拿铁"],
-            "依据": ["新开的咖啡馆提供多种饮品，其中拿铁是他们的特色推荐，以其浓郁的咖啡香和细腻的奶泡受到顾客的喜爱。"]
-        }}
-
-以下是您需要遵循的输出格式：
+```json
 [
     {{
         "问题": "xxx",
@@ -341,8 +324,7 @@ class DocumentHandler:
             "xxx", 
             "xxx"
         ]
-    }},
-    ...
+    }}, ... ,
     {{
         "问题": "xxx",
         "回答": "xxx",
@@ -357,15 +339,38 @@ class DocumentHandler:
         ]
     }}
 ]
-
+```
 - OutputRequirement:
     - 问题、回答：问答对文本
     - 分类：所属分类，应为这些分类中的一个：{categories}
     - 关键词：根据提问生成关键词，用于检索
-
-请根据我提供的文档内容，生成相关的QA内容。如果提供的信息不足以生成QA，请仅输出“无答案”三个字。
+- Workflow:
+    1. 仔细阅读提供的文档内容。
+    2. 识别文档中的关键信息点。
+    3. 为每个关键信息点生成相关的问答对。
+    4. 确保问题和答案与文档内容相关，风格自然。
+    5. 使用指定的格式输出问答对。
+- Examples: 
+    - 文档：
+        "IT侠全名为“南京大学IT侠互助协会”，是南京大学的学生社团之一\n我们的宗旨是为南大在校师生提供完全免费的电脑软硬件服务，并向广大师生普及电脑技术的基础知识\n如果你有任何问题，可以通过社团主页 https://itxia.club/ 联系我们，或者通过微信公众号 nju-itxia 联系我们"
+    - QA: 
+        [{{
+            "问题": "IT侠是什么？",
+            "回答": "IT侠全名为“南京大学IT侠互助协会”，是南京大学的学生社团之一",
+            "分类": "课余活动与社团活动",
+            "关键词": ["IT侠", "南京大学", "学生社团"],
+            "依据": ["IT侠全名为“南京大学IT侠互助协会”"]
+        }}, {{
+            "问题": "如何联系IT侠？",
+            "回答": "如果你有任何问题，可以通过社团主页 https://itxia.club/ ，或者通过微信公众号 nju-itxia 联系到IT侠",
+            "分类": "课余活动与社团活动",
+            "关键词": ["联系", "社团主页", "微信公众号"],
+            "依据": ["可以通过社团主页 https://itxia.club/ 联系我们", "或者通过微信公众号 nju-itxia 联系我们"]
+        }}]
 '''
-            ), HumanMessagePromptTemplate.from_template('''文档：\n{document}''')
+            ), HumanMessagePromptTemplate.from_template(
+'''文档：\n{document}\n\n根据文档内容，严格按照输出格式，我的输出如下：\n'''
+            )
         ])
         
         def run(block:dict):
@@ -379,6 +384,10 @@ class DocumentHandler:
                     self.log.log('模型返回为空，重试！数据：\n{}'.format(block))
                     time.sleep(0.5)
                     continue
+                if response == '<ERROR>':
+                    self.error.append(block)
+                    self.log.log('模型返回错误，加入错误列表！数据：\n{}'.format(block), 'E')
+                    break
                 if re.search('无答案', response):
                     self.log.log(f'无答案，加入错误列表！数据：\n{block}\n返回：\n{response}', 'E')
                     self.error.append(block)
@@ -412,7 +421,7 @@ class DocumentHandler:
                     break
                 except Exception as err:
                     self.log.log('出错：{}，模型返回：{}'.format(err, response))
-                    time.sleep(0.5)
+                    time.sleep(1)
         
         if len(self.blocks) == 0:
             self.log.log('文档为空，无法生成QA对')
