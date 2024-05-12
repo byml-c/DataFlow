@@ -225,6 +225,17 @@ class TextSplitter:
                 last.append_keep_block(this, self.cover_size)
                 this = ContentBlock()
                 result = this.append_block(result, self.block_size-self.cover_size)
+
+                if result is not None and len(result.content) == 1 and result.content[0][2] \
+                    and result.size > self.block_size - self.cover_size:
+                    # 如果剩余的文本块不可拆分，直接加入
+                    docs.append(Document(
+                        page_content = result.to_string(),
+                        metadata = dict(metadata)
+                    ))
+                    result = None
+                    last = ContentBlock()
+                
         if this is not None and this.size > 0:
             if self.index:
                 index_count += 1
@@ -507,12 +518,10 @@ def handle_folder(input_root, output_root):
 
 if __name__ == '__main__':
     data_root = '../RawData/'
-    output_root = '../QA/'
+    output_root = '../T_QA/'
 
     handle_list = [
-        'Documents\AAA需增添水印的新文件\分流&转专业&二次选拔\南京大学2022级本科生二次选拔方案.pdf',
-        'Documents\AAA需增添水印的新文件\分流&转专业&二次选拔\南京大学2023年全日制本科生跨大类（院系）专业准入计划及实施方案一览表.pdf',
-        'Documents\AAA需增添水印的新文件\校园网相关\南大宿舍校园网与路由器使用指南.pdf',
+        'Documents\南哪助手新生问答指南\教务服务\关于“推免”_“保研”.txt'
     ]
 
     for file_name in handle_list:
