@@ -159,6 +159,7 @@ class MessageHandler:
 - Constrains: 
     - 您生成的问题应具有普遍性，能够覆盖话题的主要方面，答案应详细且准确，格式需符合指定的JSON结构。
     - 如果提供的信息不足以生成QA，请输出“无答案”三个字。
+    - 您输出的分类，应确保为这些分类中的一个：{categories}
 - OutputFormat: 您需要按照以下JSON格式输出结果，确保每个问答对都包含“问题”、“回答”、“分类”、“关键词”和“依据”。
 ```json
 [
@@ -190,7 +191,7 @@ class MessageHandler:
     }}
 ]
 ```
-- OutputRequirement:
+- OutputConstrains:
     - 问题、回答：问答对文本
     - 分类：所属分类，应为这些分类中的一个：{categories}
     - 关键词：根据提问生成关键词，用于检索

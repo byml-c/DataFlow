@@ -124,5 +124,6 @@ if __name__ == '__main__':
             print(
 f'''当前进度：{a.status+1}/{len(a.files)}
 正在处理：{a.files[a.status+1] if a.status < len(a.files) else "无"}
-生成数据总量：{a.db.count()} 条'''
+生成数据总量：{a.db.count()} 条
+'''
             )
