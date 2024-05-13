@@ -86,14 +86,16 @@ class Generator:
 
             file = self.files[file_id]
             output_path = f'./temp/{self.uid}/{file.replace(self.root, "")}'
+            input_path = os.path.abspath(file).replace('\\', '/')
+            output_path = os.path.abspath(output_path).replace('\\', '/')
             if file.split('.')[-1] == 'qa':
                 # print(f'Call message handler input_path={file} output_path={output_path}')
                 message_handler = MessageHandler()
-                message_handler.handle(input_path=file, output_path=output_path, model=model)
+                message_handler.handle(input_path=input_path, output_path=output_path, model=model)
             else:
                 # print(f'Call document handler input_path={file} output_path={output_path}')
                 document_handler = DocumentHandler()
-                document_handler.handle(input_path=file, output_path=output_path, model=model)
+                document_handler.handle(input_path=input_path, output_path=output_path, model=model)
 
             output_data = json.load(open(f'{os.path.splitext(output_path)[0]}-save.json', 'r', encoding='utf-8'))
             for data in output_data['qa']:
@@ -105,5 +107,5 @@ class Generator:
             self.save()
 
 if __name__ == '__main__':
-    a = Generator('BATCH01', root_path='../RawData')
+    a = Generator('BATCH01', root_path='../RunData')
     a.run('qwen1.5-32b-chat')
