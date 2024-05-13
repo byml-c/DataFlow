@@ -426,7 +426,7 @@ class DocumentHandler:
                     return 
                 except Exception as err:
                     self.log.log('出错：{}，模型返回：{}'.format(err, response))
-            self.log('重试次数用尽，加入错误列表！数据：\n{}'.format(block), 'E')
+            self.log.log('重试次数用尽，加入错误列表！数据：\n{}'.format(block), 'E')
             self.error.append(block)
         
         if len(self.blocks) == 0:
