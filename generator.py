@@ -110,15 +110,15 @@ class Generator:
 if __name__ == '__main__':
     a = Generator('BATCH01', root_path='../RunData')
     main_thread = Thread(target=a.run, args=('qwen1.5-32b-chat',))
-    main_thread.run()
-
+    main_thread.start()
     if os.name == 'nt':
         os.system('cls')
     else:
         os.system('clear')
 
+    print('加载完成，程序开始运行')
     while True:
-        print('加载完成，程序开始运行，可输入 status 查看运行状态')
+        print('可输入 status 查看运行状态')
         ipt = input('>> ')
         if 'status' in ipt:
             print(
