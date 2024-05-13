@@ -235,7 +235,7 @@ class MessageHandler:
             )
         ])
 
-        def run(block:list):
+        def run(block:list, retry=5):
             if len(block) <= 1:
                 self.error.append(block)
                 return
@@ -244,14 +244,19 @@ class MessageHandler:
             for j in block:
                 msg = self.messages[j]
                 messages += '[{}]({}): {}\n'.format(msg['time'], msg['user'], msg['message'])
-            while True:
+            while retry > 0:
+                retry -= 1
+
                 response = invoke(prompt, {
                     'messages': messages,
                     'categories': '、'.join(self.categories)
                 }, model)
 
                 if response == '':
-                    time.sleep(0.5)
+                    self.log.log('模型返回为空，重试！数据：\n{}'.format(block))
+                    continue
+                if response == '<NETWORK>':
+                    retry += 1
                     continue
                 if response == '<ERROR>':
                     self.error.append(block)
@@ -284,10 +289,11 @@ class MessageHandler:
                             'author': 'AI'
                         }
                         self.qa.append(format_r)
-                    break
+                    return 
                 except Exception as err:
                     self.log.log('出错：{}，模型返回：{}'.format(err, response), 'E')
-                    time.sleep(1)
+            self.log('重试次数用尽，加入错误列表！数据：\n{}'.format(block), 'E')
+            self.error.append(block)
 
         threads = []
         thread_num = 5

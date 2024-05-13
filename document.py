@@ -374,8 +374,10 @@ class DocumentHandler:
             )
         ])
         
-        def run(block:dict):
-            while True:
+        def run(block:dict, retry=5):
+            while retry > 0:
+                retry -= 1
+
                 response = invoke(prompt, {
                     'document': block['page_content'],
                     'categories': '、'.join(self.categories)
@@ -383,7 +385,9 @@ class DocumentHandler:
 
                 if response == '':
                     self.log.log('模型返回为空，重试！数据：\n{}'.format(block))
-                    time.sleep(0.5)
+                    continue
+                if response == '<NETWORK>':
+                    retry += 1
                     continue
                 if response == '<ERROR>':
                     self.error.append(block)
@@ -419,10 +423,11 @@ class DocumentHandler:
                             'author': 'AI'
                         }
                         self.qa.append(format_r)
-                    break
+                    return 
                 except Exception as err:
                     self.log.log('出错：{}，模型返回：{}'.format(err, response))
-                    time.sleep(1)
+            self.log('重试次数用尽，加入错误列表！数据：\n{}'.format(block), 'E')
+            self.error.append(block)
         
         if len(self.blocks) == 0:
             self.log.log('文档为空，无法生成QA对')

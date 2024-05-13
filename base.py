@@ -102,6 +102,7 @@ def dashscope_invoke(prompt, data:dict, model:str) -> str:
         logger.log(f'<base> 模型调用报错，详细信息: {response}，输入内容：{messages}', 'E')
         if response.code == 'Throttling.RateQuota':
             time.sleep(10)
+            return '<NETWORK>'
         if response.code == 'DataInspectionFailed':
             return '<ERROR>'
         else:
