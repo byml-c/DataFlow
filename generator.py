@@ -6,6 +6,7 @@ from message import MessageHandler
 from document import DocumentHandler
 from database import Database
 from base import default_online
+from threading import Thread
 
 class Generator:
     uid: str
@@ -108,4 +109,14 @@ class Generator:
 
 if __name__ == '__main__':
     a = Generator('BATCH01', root_path='../RunData')
-    a.run('qwen1.5-32b-chat')
+    main_thread = Thread(target=a.run, args=('qwen1.5-32b-chat',))
+    main_thread.run()
+    while True:
+        print('输入 s 查看运行状态')
+        ipt = input('>>> ')
+        if ipt == 's':
+            print(
+f'''当前进度：{a.status+1}/{len(a.files)}
+正在处理：{a.files[a.status+1] if a.status < len(a.files) else "无"}
+生成数据总量：{a.db.count()} 条'''
+            )

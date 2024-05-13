@@ -72,6 +72,14 @@ class Database:
         query = f'''SELECT * FROM '{self.sheet}';'''
         self.db_cursor.execute(query)
         return self.db_cursor.fetchall()
+    
+    def count(self)->int:
+        '''
+            返回表中的数据数量
+        '''
+        query = f'''SELECT COUNT(*) FROM '{self.sheet}';'''
+        self.db_cursor.execute(query)
+        return self.db_cursor.fetchone()[0]
 
     def __str__(self):
         '''打印数据库中的所有数据'''
